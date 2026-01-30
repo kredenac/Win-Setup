@@ -161,27 +161,34 @@ if (-not $wingetAvailable) {
         Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
         Write-Success "UI.Xaml dependency installed"
 
-        # Try to download and install Windows App Runtime dependency
-        # This may not be available or needed depending on the winget version
-        Write-Info "Attempting to install Windows App Runtime dependency..."
-        try {
-            $appRuntimeUrl = "https://aka.ms/windowsappsdk/1.6/latest/windowsappruntimeinstall-x64.exe"
-            $appRuntimePath = "$env:TEMP\windowsappruntimeinstall-x64.exe"
-            Invoke-WebRequest -Uri $appRuntimeUrl -OutFile $appRuntimePath -UseBasicParsing
-            Start-Process -FilePath $appRuntimePath -ArgumentList "--quiet" -Wait -NoNewWindow
-            Write-Success "Windows App Runtime dependency installed"
-        }
-        catch {
-            Write-Warning "Could not install Windows App Runtime dependency (may not be needed): $_"
-        }
-
         # Download and install App Installer (includes winget)
         Write-Info "Downloading App Installer (winget)..."
         $wingetUrl = "https://aka.ms/getwinget"
         $wingetPath = "$env:TEMP\Microsoft.DesktopAppInstaller.msixbundle"
         Invoke-WebRequest -Uri $wingetUrl -OutFile $wingetPath -UseBasicParsing
-        Add-AppxPackage -Path $wingetPath
-        Write-Success "App Installer installed"
+
+        # Try to install App Installer
+        try {
+            Add-AppxPackage -Path $wingetPath
+            Write-Success "App Installer installed"
+        }
+        catch {
+            # If it fails due to missing Windows App Runtime, try to install it
+            if ($_.Exception.Message -like "*WindowsAppRuntime*") {
+                Write-Warning "App Installer requires Windows App Runtime. Attempting alternative installation..."
+
+                # Try downloading an older version of winget that doesn't require Windows App Runtime
+                Write-Info "Downloading older version of App Installer..."
+                $oldWingetUrl = "https://github.com/microsoft/winget-cli/releases/download/v1.4.10173/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+                $oldWingetPath = "$env:TEMP\Microsoft.DesktopAppInstaller_old.msixbundle"
+                Invoke-WebRequest -Uri $oldWingetUrl -OutFile $oldWingetPath -UseBasicParsing
+                Add-AppxPackage -Path $oldWingetPath
+                Write-Success "App Installer (older version) installed"
+            }
+            else {
+                throw
+            }
+        }
 
         # Refresh PATH and check if winget is now available
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
