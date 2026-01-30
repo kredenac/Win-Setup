@@ -429,16 +429,33 @@ if ($wingetAvailable) {
 
     # Install Node.js LTS via nvm (needs to run after nvm installation)
     Invoke-Step "Install Node.js LTS via nvm" {
-        # Refresh environment variables to get nvm in PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        # Try multiple possible nvm installation locations
+        $possibleNvmPaths = @(
+            "$env:APPDATA\nvm\nvm.exe",
+            "$env:ProgramFiles\nvm\nvm.exe",
+            "${env:ProgramFiles(x86)}\nvm\nvm.exe"
+        )
 
-        # Check if nvm is available
-        $nvmPath = "$env:APPDATA\nvm\nvm.exe"
-        if (Test-Path $nvmPath) {
-            & $nvmPath install lts
-            & $nvmPath use lts
+        $nvmPath = $null
+        foreach ($path in $possibleNvmPaths) {
+            if (Test-Path $path) {
+                $nvmPath = $path
+                Write-Info "Found nvm at: $path"
+                break
+            }
+        }
+
+        if ($nvmPath) {
+            # Found nvm, install Node.js in a new PowerShell process with updated PATH
+            $installScript = @"
+& '$nvmPath' install lts
+& '$nvmPath' use lts
+"@
+            $result = powershell -NoProfile -Command $installScript 2>&1
+            Write-Info $result
         } else {
-            throw "nvm not found in expected location. May need to restart terminal."
+            Write-Warning "nvm not found. Please open a new terminal and run: nvm install lts && nvm use lts"
+            $script:warningCount++
         }
     }
 } else {
@@ -539,163 +556,6 @@ if (-not $gitAvailable) {
 }
 #endregion
 
-#region Taskbar Pinning
-Write-Host "`n--- TASKBAR PINNING ---`n" -ForegroundColor Yellow
-
-# Helper function to pin app to taskbar
-function Pin-ToTaskbar {
-    param(
-        [string]$AppName,
-        [string]$AppPath
-    )
-
-    if (Test-Path $AppPath) {
-        try {
-            $shell = New-Object -ComObject Shell.Application
-            $folder = $shell.Namespace((Split-Path $AppPath))
-            $item = $folder.ParseName((Split-Path $AppPath -Leaf))
-
-            # Try to find the pin verb (name varies by Windows version/language)
-            $verb = $item.Verbs() | Where-Object {
-                $_.Name -match 'Pin to taskbar' -or
-                $_.Name -match 'taskbar' -or
-                $_.Name -replace '&', '' -match 'Pin to taskbar'
-            } | Select-Object -First 1
-
-            if ($verb) {
-                $verb.DoIt()
-                Start-Sleep -Milliseconds 500
-                Write-Info "Pinned $AppName to taskbar"
-                return $true
-            } else {
-                Write-Warning "Could not find 'Pin to taskbar' verb for $AppName"
-                Write-Info "Available verbs: $($item.Verbs() | ForEach-Object { $_.Name } | Join-String -Separator ', ')"
-                return $false
-            }
-        }
-        catch {
-            Write-Warning "Failed to pin $AppName to taskbar: $_"
-            return $false
-        }
-    } else {
-        Write-Warning "$AppName not found at $AppPath"
-        return $false
-    }
-}
-
-Invoke-Step "Pin Chrome to taskbar" {
-    # Common Chrome installation paths
-    $chromePaths = @(
-        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
-    )
-
-    $found = $false
-    $pinned = $false
-    foreach ($path in $chromePaths) {
-        if (Test-Path $path) {
-            $found = $true
-            Write-Info "Found Chrome at: $path"
-            $pinned = Pin-ToTaskbar "Chrome" $path
-            if ($pinned) {
-                break
-            }
-        }
-    }
-
-    if (-not $found) {
-        throw "Chrome not found in expected locations"
-    }
-    if (-not $pinned) {
-        Write-Warning "Chrome found but could not pin to taskbar"
-        $script:warningCount++
-    }
-}
-
-Invoke-Step "Pin Windows Terminal to taskbar" {
-    # Windows Terminal is a UWP app, pinning works differently
-    try {
-        $shell = New-Object -ComObject Shell.Application
-        $folder = $shell.Namespace('shell:::{4234d49b-0245-4df3-b780-3893943456e1}')
-        $item = $folder.Items() | Where-Object { $_.Name -eq "Terminal" -or $_.Name -eq "Windows Terminal" }
-        if ($item) {
-            $verb = $item.Verbs() | Where-Object { $_.Name -match 'Pin to taskbar' }
-            if ($verb) {
-                $verb.DoIt()
-                Write-Info "Pinned Windows Terminal to taskbar"
-            } else {
-                throw "Could not find 'Pin to taskbar' option"
-            }
-        } else {
-            throw "Windows Terminal not found"
-        }
-    }
-    catch {
-        Write-Warning "Failed to pin Windows Terminal: $_"
-        $script:warningCount++
-    }
-}
-
-Invoke-Step "Pin Visual Studio Code to taskbar" {
-    # Common VS Code installation paths
-    $vscodePaths = @(
-        "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe",
-        "$env:ProgramFiles\Microsoft VS Code\Code.exe",
-        "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe"
-    )
-
-    $found = $false
-    $pinned = $false
-    foreach ($path in $vscodePaths) {
-        if (Test-Path $path) {
-            $found = $true
-            Write-Info "Found VS Code at: $path"
-            $pinned = Pin-ToTaskbar "VS Code" $path
-            if ($pinned) {
-                break
-            }
-        }
-    }
-
-    if (-not $found) {
-        throw "VS Code not found in expected locations"
-    }
-    if (-not $pinned) {
-        Write-Warning "VS Code found but could not pin to taskbar"
-        $script:warningCount++
-    }
-}
-
-Invoke-Step "Pin Everything to taskbar" {
-    # Common Everything installation paths
-    $everythingPaths = @(
-        "$env:ProgramFiles\Everything\Everything.exe",
-        "${env:ProgramFiles(x86)}\Everything\Everything.exe",
-        "$env:LOCALAPPDATA\Programs\Everything\Everything.exe"
-    )
-
-    $found = $false
-    $pinned = $false
-    foreach ($path in $everythingPaths) {
-        if (Test-Path $path) {
-            $found = $true
-            Write-Info "Found Everything at: $path"
-            $pinned = Pin-ToTaskbar "Everything" $path
-            if ($pinned) {
-                break
-            }
-        }
-    }
-
-    if (-not $found) {
-        throw "Everything not found in expected locations"
-    }
-    if (-not $pinned) {
-        Write-Warning "Everything found but could not pin to taskbar"
-        $script:warningCount++
-    }
-}
 #endregion
 
 #region PowerShell Profile Configuration
@@ -833,6 +693,13 @@ Write-Host "`n" -NoNewline
 Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
 Write-Host "Some changes require a restart to take effect."
 Write-Host "This includes: UAC settings, Developer Mode, taskbar changes, date/time format`n"
+
+Write-Host "REMINDER: " -ForegroundColor Cyan -NoNewline
+Write-Host "You might want to pin these apps to the taskbar:"
+Write-Host "  - Google Chrome"
+Write-Host "  - Windows Terminal"
+Write-Host "  - Visual Studio Code"
+Write-Host "  - Everything Search`n"
 
 $restart = Read-Host "Would you like to restart now? (Y/N)"
 if ($restart -eq "Y" -or $restart -eq "y") {
