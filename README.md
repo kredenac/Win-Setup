@@ -4,9 +4,11 @@ Automated Windows configuration script for new machine setup. Designed for devel
 
 ## How to Run
 
+**IMPORTANT:** This script requires **PowerShell 7+** (not Windows PowerShell 5.1). If you run it in Windows PowerShell by mistake, the script will automatically install PowerShell 7 and prompt you to re-run it.
+
 ### Option 1: One-liner (Remote Execution)
 
-Run directly from an elevated PowerShell session:
+Run directly from an elevated **PowerShell 7+** session:
 
 ```powershell
 irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
@@ -18,7 +20,7 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
 
 1. Download or clone this repository to your machine
 2. Edit `config.json` with your Git settings
-3. Right-click **Windows Terminal** and select **Run as Administrator**
+3. Right-click **Windows Terminal** and select **Run as Administrator** (this opens PowerShell 7 by default)
 4. Navigate to the script directory:
    ```powershell
    cd C:\path\to\win-setup
@@ -27,6 +29,12 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
    ```powershell
    .\setup.ps1
    ```
+
+**To verify you're using PowerShell 7+:**
+```powershell
+$PSVersionTable.PSVersion
+# Should show Major version 7 or higher
+```
 
 ## What This Script Does
 
@@ -37,8 +45,9 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
 - Hides Music folder from File Explorer sidebar
 - Shows "This PC" icon on desktop
 - Removes weather/search highlights from taskbar
-- Removes widgets, Meet Now from taskbar
-- Unpins Microsoft Store and Copilot from taskbar
+- Removes widgets, Meet Now, and Task View button from taskbar
+- Unpins Microsoft Store, Copilot, and Microsoft Edge from taskbar
+- Pins Chrome, Windows Terminal, and Everything to taskbar (in that order, after File Explorer)
 - Disables web search results in Start Menu (keeps local search)
 
 ### System Settings
@@ -120,6 +129,18 @@ Some items may need manual attention:
 
 ## Troubleshooting
 
+### "Running on Windows PowerShell" warning
+If you see a warning about Windows PowerShell and the script installs PowerShell 7:
+1. The script will automatically install PowerShell 7 for you
+2. Close the current window after installation
+3. Open a new **PowerShell 7** window (not Windows PowerShell) as Administrator
+4. Re-run the script
+
+**To open PowerShell 7:**
+- Search for "PowerShell 7" in Start Menu, or
+- Open Windows Terminal (which uses PowerShell 7 by default), or
+- Run `pwsh` from any command prompt
+
 ### "Script cannot be loaded because running scripts is disabled"
 Run this command in an elevated PowerShell session:
 ```powershell
@@ -127,7 +148,7 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 
 ### "winget not found"
-Ensure you're on Windows 10 20H2+ or Windows 11. Update Windows if necessary.
+This usually happens if you're running Windows PowerShell instead of PowerShell 7. The script will detect this and install PowerShell 7 automatically. If winget is still not found after switching to PowerShell 7, ensure you're on Windows 10 20H2+ or Windows 11 and update Windows.
 
 ### Software installation fails
 Check your internet connection. You can re-run the script safely - it will skip already-installed software.

@@ -44,12 +44,10 @@ Write-Host "  Windows Setup Script" -ForegroundColor Magenta
 Write-Host "========================================`n" -ForegroundColor Magenta
 
 # Load configuration
-$configPath = Join-Path $PSScriptRoot "config.json"
-if (Test-Path $configPath) {
-    Write-Info "Loading configuration from config.json"
-    $config = Get-Content $configPath | ConvertFrom-Json
-} else {
-    Write-Warning "config.json not found, using defaults"
+# Handle both local execution and remote execution (irm | iex)
+if ([string]::IsNullOrEmpty($PSScriptRoot)) {
+    # Remote execution - no config file available
+    Write-Warning "Running in remote mode (no config.json), using defaults"
     $config = @{
         git = @{
             username = "kredenac"
@@ -58,11 +56,71 @@ if (Test-Path $configPath) {
         gaming = $false
     }
     $script:warningCount++
+} else {
+    # Local execution - try to load config.json
+    $configPath = Join-Path $PSScriptRoot "config.json"
+    if (Test-Path $configPath) {
+        Write-Info "Loading configuration from config.json"
+        $config = Get-Content $configPath | ConvertFrom-Json
+    } else {
+        Write-Warning "config.json not found, using defaults"
+        $config = @{
+            git = @{
+                username = "kredenac"
+                email = "zacementirano@gmail.com"
+            }
+            gaming = $false
+        }
+        $script:warningCount++
+    }
 }
 
 Write-Info "Git Username: $($config.git.username)"
 Write-Info "Git Email: $($config.git.email)"
 Write-Info "Gaming Mode: $($config.gaming)"
+
+# Check PowerShell version and install PowerShell 7 if needed
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Warning "Running on Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
+    Write-Warning "This script requires PowerShell 7+. Installing PowerShell 7..."
+
+    # Check if winget is available in Windows PowerShell
+    $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+
+    if ($wingetAvailable) {
+        Write-Info "Installing PowerShell 7 via winget..."
+        try {
+            winget install --id Microsoft.PowerShell --silent --accept-source-agreements --accept-package-agreements
+            Write-Success "PowerShell 7 installed successfully!"
+            Write-Host "`n" -NoNewline
+            Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
+            Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
+            Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
+            exit 0
+        }
+        catch {
+            Write-ErrorMsg "Failed to install PowerShell 7: $_"
+            Write-Host "Please install PowerShell 7 manually from: https://aka.ms/powershell"
+            exit 1
+        }
+    } else {
+        Write-ErrorMsg "winget is not available and PowerShell 7 is required"
+        Write-Host "Please install PowerShell 7 manually from: https://aka.ms/powershell"
+        Write-Host "Then re-run this script in PowerShell 7 (not Windows PowerShell)."
+        exit 1
+    }
+}
+
+Write-Info "Running on PowerShell $($PSVersionTable.PSVersion)"
+
+# Check if winget is available
+$wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+if (-not $wingetAvailable) {
+    Write-Warning "winget (Windows Package Manager) is not installed or not in PATH"
+    Write-Warning "Software installations will be skipped. Install winget manually or update Windows."
+    $script:warningCount++
+}
+
 Write-Host ""
 #endregion
 
@@ -104,7 +162,18 @@ Invoke-Step "Remove search highlights from taskbar" {
 
 Invoke-Step "Remove widgets from taskbar" {
     $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-    Set-ItemProperty -Path $registryPath -Name "TaskbarDa" -Value 0 -Type DWord -Force
+    try {
+        Set-ItemProperty -Path $registryPath -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction Stop
+    }
+    catch [System.UnauthorizedAccessException] {
+        Write-Warning "Permission denied for TaskbarDa registry key (common in VMs)"
+        $script:warningCount++
+    }
+}
+
+Invoke-Step "Disable Task View from taskbar" {
+    $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+    Set-ItemProperty -Path $registryPath -Name "ShowTaskViewButton" -Value 0 -Type DWord -Force
 }
 
 Invoke-Step "Remove Meet Now from taskbar" {
@@ -161,28 +230,35 @@ Invoke-Step "Disable hibernation" {
 }
 
 Invoke-Step "Set monitor refresh rate to maximum" {
-    # Get all displays
-    $displays = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams
-    foreach ($display in $displays) {
-        try {
-            # Get current resolution
-            $currentMode = Get-DisplayResolution
-            if ($currentMode) {
-                # Get max refresh rate for current resolution
-                $maxRefreshRate = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorListedSupportedSourceModes |
-                    Where-Object { $_.HorizontalActivePixels -eq $currentMode.Width -and $_.VerticalActivePixels -eq $currentMode.Height } |
-                    Measure-Object -Property RefreshRate -Maximum).Maximum
+    try {
+        # Get all displays (may not be supported in VMs)
+        $displays = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction Stop
+        foreach ($display in $displays) {
+            try {
+                # Get current resolution
+                $currentMode = Get-DisplayResolution
+                if ($currentMode) {
+                    # Get max refresh rate for current resolution
+                    $maxRefreshRate = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorListedSupportedSourceModes |
+                        Where-Object { $_.HorizontalActivePixels -eq $currentMode.Width -and $_.VerticalActivePixels -eq $currentMode.Height } |
+                        Measure-Object -Property RefreshRate -Maximum).Maximum
 
-                if ($maxRefreshRate -and $maxRefreshRate -gt $currentMode.RefreshRate) {
-                    Set-DisplayResolution -Width $currentMode.Width -Height $currentMode.Height -RefreshRate $maxRefreshRate
-                    Write-Info "Set refresh rate to $maxRefreshRate Hz"
+                    if ($maxRefreshRate -and $maxRefreshRate -gt $currentMode.RefreshRate) {
+                        Set-DisplayResolution -Width $currentMode.Width -Height $currentMode.Height -RefreshRate $maxRefreshRate
+                        Write-Info "Set refresh rate to $maxRefreshRate Hz"
+                    }
                 }
             }
+            catch {
+                Write-Warning "Could not automatically set refresh rate. Please set manually in Display Settings."
+                $script:warningCount++
+            }
         }
-        catch {
-            Write-Warning "Could not automatically set refresh rate. Please set manually in Display Settings."
-            $script:warningCount++
-        }
+    }
+    catch {
+        # CIM operations not supported (common in VMs)
+        Write-Warning "Monitor refresh rate detection not supported in this environment (VM or limited hardware access)"
+        $script:warningCount++
     }
 }
 
@@ -220,12 +296,32 @@ Invoke-Step "Unpin Microsoft Store from taskbar" {
         $script:warningCount++
     }
 }
+
+Invoke-Step "Unpin Microsoft Edge from taskbar" {
+    $appName = "Microsoft Edge"
+    try {
+        ((New-Object -Com Shell.Application).NameSpace('shell:::{4234d49b-0245-4df3-b780-3893943456e1}').Items() |
+            Where-Object { $_.Name -eq $appName }).Verbs() |
+            Where-Object { $_.Name.replace('&', '') -match 'Unpin from taskbar' } |
+            ForEach-Object { $_.DoIt() }
+    }
+    catch {
+        Write-Warning "Could not unpin Microsoft Edge automatically"
+        $script:warningCount++
+    }
+}
 #endregion
 
 #region Software Installation (SLOW - Run in Parallel)
 Write-Host "`n--- SOFTWARE INSTALLATION (Parallel) ---`n" -ForegroundColor Yellow
 
-Write-Info "Starting parallel software installations..."
+# Skip software installation if winget is not available
+if (-not $wingetAvailable) {
+    Write-Warning "Skipping software installations (winget not available)"
+    Write-Host ""
+    # Skip to next section
+} else {
+    Write-Info "Starting parallel software installations..."
 
 # Define software to install in parallel
 $softwareJobs = @()
@@ -280,21 +376,26 @@ foreach ($jobInfo in $softwareJobs) {
     }
 }
 
-Write-Host ""
+    Write-Host ""
+}
 
 # Sequential installations (dependencies required)
 Write-Host "--- SOFTWARE INSTALLATION (Sequential) ---`n" -ForegroundColor Yellow
 
-Invoke-Step "Install Git" {
-    winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
-}
+if (-not $wingetAvailable) {
+    Write-Warning "Skipping sequential software installations (winget not available)"
+    Write-Host ""
+} else {
+    Invoke-Step "Install Git" {
+        winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
+    }
 
-Invoke-Step "Install nvm-windows" {
-    winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
-}
+    Invoke-Step "Install nvm-windows" {
+        winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
+    }
 
-# Install Node.js LTS via nvm (needs to run after nvm installation)
-Invoke-Step "Install Node.js LTS via nvm" {
+    # Install Node.js LTS via nvm (needs to run after nvm installation)
+    Invoke-Step "Install Node.js LTS via nvm" {
     # Refresh environment variables to get nvm in PATH
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
@@ -306,6 +407,7 @@ Invoke-Step "Install Node.js LTS via nvm" {
     } else {
         throw "nvm not found in expected location. May need to restart terminal."
     }
+    }
 }
 #endregion
 
@@ -315,24 +417,133 @@ Write-Host "`n--- GIT CONFIGURATION ---`n" -ForegroundColor Yellow
 # Refresh PATH to ensure git is available
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
-Invoke-Step "Configure Git username" {
-    git config --global user.name "$($config.git.username)"
+# Check if git is available
+$gitAvailable = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
+if (-not $gitAvailable) {
+    Write-Warning "Git is not installed or not in PATH. Skipping Git configuration."
+    Write-Host ""
+} else {
+    Invoke-Step "Configure Git username" {
+        git config --global user.name "$($config.git.username)"
+    }
+
+    Invoke-Step "Configure Git email" {
+        git config --global user.email "$($config.git.email)"
+    }
+
+    Invoke-Step "Set Git default branch to main" {
+        git config --global init.defaultBranch main
+    }
+
+    Invoke-Step "Set Git default editor to VS Code" {
+        git config --global core.editor "code --wait"
+    }
+
+    Invoke-Step "Configure Git credential manager" {
+        git config --global credential.helper manager-core
+    }
+}
+#endregion
+
+#region Taskbar Pinning
+Write-Host "`n--- TASKBAR PINNING ---`n" -ForegroundColor Yellow
+
+# Helper function to pin app to taskbar
+function Pin-ToTaskbar {
+    param(
+        [string]$AppName,
+        [string]$AppPath
+    )
+
+    if (Test-Path $AppPath) {
+        try {
+            $shell = New-Object -ComObject Shell.Application
+            $folder = $shell.Namespace((Split-Path $AppPath))
+            $item = $folder.ParseName((Split-Path $AppPath -Leaf))
+            $verb = $item.Verbs() | Where-Object { $_.Name -match 'Pin to taskbar' }
+            if ($verb) {
+                $verb.DoIt()
+                Write-Info "Pinned $AppName to taskbar"
+                return $true
+            } else {
+                Write-Warning "Could not find 'Pin to taskbar' option for $AppName"
+                return $false
+            }
+        }
+        catch {
+            Write-Warning "Failed to pin $AppName to taskbar: $_"
+            return $false
+        }
+    } else {
+        Write-Warning "$AppName not found at $AppPath"
+        return $false
+    }
 }
 
-Invoke-Step "Configure Git email" {
-    git config --global user.email "$($config.git.email)"
+Invoke-Step "Pin Chrome to taskbar" {
+    # Common Chrome installation paths
+    $chromePaths = @(
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    )
+
+    $pinned = $false
+    foreach ($path in $chromePaths) {
+        if (Test-Path $path) {
+            $pinned = Pin-ToTaskbar "Chrome" $path
+            break
+        }
+    }
+
+    if (-not $pinned) {
+        throw "Chrome not found in expected locations"
+    }
 }
 
-Invoke-Step "Set Git default branch to main" {
-    git config --global init.defaultBranch main
+Invoke-Step "Pin Windows Terminal to taskbar" {
+    # Windows Terminal is a UWP app, pinning works differently
+    try {
+        $shell = New-Object -ComObject Shell.Application
+        $folder = $shell.Namespace('shell:::{4234d49b-0245-4df3-b780-3893943456e1}')
+        $item = $folder.Items() | Where-Object { $_.Name -eq "Terminal" -or $_.Name -eq "Windows Terminal" }
+        if ($item) {
+            $verb = $item.Verbs() | Where-Object { $_.Name -match 'Pin to taskbar' }
+            if ($verb) {
+                $verb.DoIt()
+                Write-Info "Pinned Windows Terminal to taskbar"
+            } else {
+                throw "Could not find 'Pin to taskbar' option"
+            }
+        } else {
+            throw "Windows Terminal not found"
+        }
+    }
+    catch {
+        Write-Warning "Failed to pin Windows Terminal: $_"
+        $script:warningCount++
+    }
 }
 
-Invoke-Step "Set Git default editor to VS Code" {
-    git config --global core.editor "code --wait"
-}
+Invoke-Step "Pin Everything to taskbar" {
+    # Common Everything installation paths
+    $everythingPaths = @(
+        "$env:ProgramFiles\Everything\Everything.exe",
+        "${env:ProgramFiles(x86)}\Everything\Everything.exe",
+        "$env:LOCALAPPDATA\Programs\Everything\Everything.exe"
+    )
 
-Invoke-Step "Configure Git credential manager" {
-    git config --global credential.helper manager-core
+    $pinned = $false
+    foreach ($path in $everythingPaths) {
+        if (Test-Path $path) {
+            $pinned = Pin-ToTaskbar "Everything" $path
+            break
+        }
+    }
+
+    if (-not $pinned) {
+        throw "Everything not found in expected locations"
+    }
 }
 #endregion
 
@@ -340,7 +551,10 @@ Invoke-Step "Configure Git credential manager" {
 Write-Host "`n--- POWERSHELL PROFILE ---`n" -ForegroundColor Yellow
 
 Invoke-Step "Install posh-git module" {
-    Install-Module -Name posh-git -Scope CurrentUser -Force -AllowClobber
+    # Install NuGet provider first without prompting
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction SilentlyContinue | Out-Null
+    # Install posh-git module
+    Install-Module -Name posh-git -Scope CurrentUser -Force -AllowClobber -SkipPublisherCheck
 }
 
 Invoke-Step "Configure PowerShell profile with Git aliases" {
