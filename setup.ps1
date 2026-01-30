@@ -426,6 +426,21 @@ if ($wingetAvailable) {
     Invoke-Step "Install nvm-windows" {
         winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
     }
+
+    # Install Node.js LTS via nvm (needs to run after nvm installation)
+    Invoke-Step "Install Node.js LTS via nvm" {
+        # Refresh environment variables to get nvm in PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+        # Check if nvm is available
+        $nvmPath = "$env:APPDATA\nvm\nvm.exe"
+        if (Test-Path $nvmPath) {
+            & $nvmPath install lts
+            & $nvmPath use lts
+        } else {
+            throw "nvm not found in expected location. May need to restart terminal."
+        }
+    }
 } else {
     Write-Info "Using direct downloads for software installation..."
 
@@ -464,24 +479,8 @@ if ($wingetAvailable) {
         Start-Process -FilePath $pythonPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait -NoNewWindow
     }
 
-    Write-Info "Skipping some software (no direct download URLs available): VLC, Everything, PowerToys, nvm"
+    Write-Info "Skipping some software (no direct download URLs available): VLC, Everything, PowerToys, nvm, Node.js"
     $script:warningCount++
-}
-
-    # Install Node.js LTS via nvm (needs to run after nvm installation)
-    Invoke-Step "Install Node.js LTS via nvm" {
-    # Refresh environment variables to get nvm in PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-
-    # Check if nvm is available
-    $nvmPath = "$env:APPDATA\nvm\nvm.exe"
-    if (Test-Path $nvmPath) {
-        & $nvmPath install lts
-        & $nvmPath use lts
-    } else {
-        throw "nvm not found in expected location. May need to restart terminal."
-    }
-    }
 }
 #endregion
 
