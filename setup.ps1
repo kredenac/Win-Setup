@@ -96,7 +96,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
             Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
             Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
             Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
-            exit 0
+            return
         }
         catch {
             Write-ErrorMsg "Failed to install PowerShell 7 via winget: $_"
@@ -125,12 +125,13 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
             Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
             Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
             Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
-            exit 0
+            return
         }
         catch {
             Write-ErrorMsg "Failed to install PowerShell 7: $_"
             Write-Host "Please install PowerShell 7 manually from: https://aka.ms/powershell"
-            exit 1
+            $global:LASTEXITCODE = 1
+            return
         }
     }
 }
