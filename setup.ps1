@@ -477,11 +477,32 @@ if ($wingetAvailable) {
         $pythonPath = "$env:TEMP\python_installer.exe"
         Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonPath -UseBasicParsing
         Start-Process -FilePath $pythonPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait -NoNewWindow
+
+        # Manually add Python to PATH if installer didn't do it
+        $pythonInstallPath = "$env:ProgramFiles\Python312"
+        if (Test-Path $pythonInstallPath) {
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            if ($currentPath -notlike "*$pythonInstallPath*") {
+                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
+                Write-Info "Added Python to system PATH"
+            }
+        }
     }
 
-    Write-Info "Skipping some software (no direct download URLs available): VLC, Everything, PowerToys, nvm, Node.js"
+    Invoke-Step "Install Everything Search" {
+        $everythingUrl = "https://www.voidtools.com/Everything-1.4.1.1026.x64-Setup.exe"
+        $everythingPath = "$env:TEMP\everything_installer.exe"
+        Invoke-WebRequest -Uri $everythingUrl -OutFile $everythingPath -UseBasicParsing
+        Start-Process -FilePath $everythingPath -ArgumentList "/S" -Wait -NoNewWindow
+    }
+
+    Write-Info "Skipping some software (no direct download URLs available): VLC, PowerToys, nvm, Node.js"
     $script:warningCount++
 }
+
+# Wait for all installers to fully complete and register
+Write-Info "Waiting for installations to finalize..."
+Start-Sleep -Seconds 5
 #endregion
 
 #region Git Configuration
@@ -533,13 +554,22 @@ function Pin-ToTaskbar {
             $shell = New-Object -ComObject Shell.Application
             $folder = $shell.Namespace((Split-Path $AppPath))
             $item = $folder.ParseName((Split-Path $AppPath -Leaf))
-            $verb = $item.Verbs() | Where-Object { $_.Name -match 'Pin to taskbar' }
+
+            # Try to find the pin verb (name varies by Windows version/language)
+            $verb = $item.Verbs() | Where-Object {
+                $_.Name -match 'Pin to taskbar' -or
+                $_.Name -match 'taskbar' -or
+                $_.Name -replace '&', '' -match 'Pin to taskbar'
+            } | Select-Object -First 1
+
             if ($verb) {
                 $verb.DoIt()
+                Start-Sleep -Milliseconds 500
                 Write-Info "Pinned $AppName to taskbar"
                 return $true
             } else {
-                Write-Warning "Could not find 'Pin to taskbar' option for $AppName"
+                Write-Warning "Could not find 'Pin to taskbar' verb for $AppName"
+                Write-Info "Available verbs: $($item.Verbs() | ForEach-Object { $_.Name } | Join-String -Separator ', ')"
                 return $false
             }
         }
@@ -561,16 +591,25 @@ Invoke-Step "Pin Chrome to taskbar" {
         "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
     )
 
+    $found = $false
     $pinned = $false
     foreach ($path in $chromePaths) {
         if (Test-Path $path) {
+            $found = $true
+            Write-Info "Found Chrome at: $path"
             $pinned = Pin-ToTaskbar "Chrome" $path
-            break
+            if ($pinned) {
+                break
+            }
         }
     }
 
-    if (-not $pinned) {
+    if (-not $found) {
         throw "Chrome not found in expected locations"
+    }
+    if (-not $pinned) {
+        Write-Warning "Chrome found but could not pin to taskbar"
+        $script:warningCount++
     }
 }
 
@@ -606,16 +645,25 @@ Invoke-Step "Pin Visual Studio Code to taskbar" {
         "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe"
     )
 
+    $found = $false
     $pinned = $false
     foreach ($path in $vscodePaths) {
         if (Test-Path $path) {
+            $found = $true
+            Write-Info "Found VS Code at: $path"
             $pinned = Pin-ToTaskbar "VS Code" $path
-            break
+            if ($pinned) {
+                break
+            }
         }
     }
 
-    if (-not $pinned) {
+    if (-not $found) {
         throw "VS Code not found in expected locations"
+    }
+    if (-not $pinned) {
+        Write-Warning "VS Code found but could not pin to taskbar"
+        $script:warningCount++
     }
 }
 
@@ -627,16 +675,25 @@ Invoke-Step "Pin Everything to taskbar" {
         "$env:LOCALAPPDATA\Programs\Everything\Everything.exe"
     )
 
+    $found = $false
     $pinned = $false
     foreach ($path in $everythingPaths) {
         if (Test-Path $path) {
+            $found = $true
+            Write-Info "Found Everything at: $path"
             $pinned = Pin-ToTaskbar "Everything" $path
-            break
+            if ($pinned) {
+                break
+            }
         }
     }
 
-    if (-not $pinned) {
+    if (-not $found) {
         throw "Everything not found in expected locations"
+    }
+    if (-not $pinned) {
+        Write-Warning "Everything found but could not pin to taskbar"
+        $script:warningCount++
     }
 }
 #endregion
