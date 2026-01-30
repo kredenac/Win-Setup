@@ -190,12 +190,52 @@ if (-not $wingetAvailable) {
             }
         }
 
+        # Wait for App Installer to register (can take a few seconds)
+        Write-Info "Waiting for winget to register..."
+        Start-Sleep -Seconds 3
+
         # Refresh PATH and check if winget is now available
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-        $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+
+        # Try to find winget multiple times (can take a moment to register)
+        $wingetAvailable = $false
+        $maxRetries = 5
+        for ($i = 1; $i -le $maxRetries; $i++) {
+            $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+            if ($wingetAvailable) {
+                break
+            }
+
+            if ($i -lt $maxRetries) {
+                Write-Info "winget not found yet, waiting... (attempt $i/$maxRetries)"
+                Start-Sleep -Seconds 2
+                # Refresh PATH again
+                $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            }
+        }
+
+        # If still not found, try adding common winget locations to PATH manually
+        if (-not $wingetAvailable) {
+            Write-Info "Trying to locate winget manually..."
+            $commonWingetPaths = @(
+                "$env:LOCALAPPDATA\Microsoft\WindowsApps",
+                "$env:ProgramFiles\WindowsApps"
+            )
+
+            foreach ($path in $commonWingetPaths) {
+                if (Test-Path "$path\winget.exe") {
+                    $env:Path = "$path;$env:Path"
+                    $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+                    if ($wingetAvailable) {
+                        Write-Info "Found winget at: $path"
+                        break
+                    }
+                }
+            }
+        }
 
         if (-not $wingetAvailable) {
-            throw "winget was installed but is not available in PATH. Try restarting your terminal."
+            throw "winget was installed but is not available in PATH. Try restarting your terminal or check if App Execution Aliases are enabled in Windows Settings > Apps > Advanced app settings."
         }
 
         Write-Success "winget is now available"
