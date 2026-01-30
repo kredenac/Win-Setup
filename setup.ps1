@@ -141,79 +141,32 @@ Write-Info "Running on PowerShell $($PSVersionTable.PSVersion)"
 # Check if winget is available
 $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
 if (-not $wingetAvailable) {
-    Write-Warning "winget (Windows Package Manager) is not installed or not in PATH"
-    Write-Info "Attempting to install winget..."
-
-    try {
-        # For Windows Sandbox and minimal environments, use standalone winget
-        Write-Info "Downloading standalone winget..."
-
-        # Download the latest winget release
-        $wingetRelease = "v1.9.25200"
-        $wingetZipUrl = "https://github.com/microsoft/winget-cli/releases/download/$wingetRelease/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-        $wingetZipPath = "$env:TEMP\winget.msixbundle"
-
-        # Download VCLibs dependency first
-        Write-Info "Downloading VCLibs dependency..."
-        $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        $vcLibsPath = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
-        Add-AppxPackage -Path $vcLibsPath -ErrorAction SilentlyContinue
-        Write-Success "VCLibs installed"
-
-        # Download UI.Xaml dependency
-        Write-Info "Downloading UI.Xaml dependency..."
-        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
-        $uiXamlPath = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
-        Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
-        Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
-        Write-Success "UI.Xaml installed"
-
-        # Try downloading and installing winget
-        Invoke-WebRequest -Uri $wingetZipUrl -OutFile $wingetZipPath -UseBasicParsing
-        Add-AppxPackage -Path $wingetZipPath -ErrorAction Stop
-        Write-Success "winget package installed"
-
-        # Wait and check for winget
-        Start-Sleep -Seconds 5
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-        $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-
-        if ($wingetAvailable) {
-            Write-Success "winget is now available"
-        } else {
-            throw "winget package installed but executable not found. This may be due to Windows Sandbox restrictions on App Execution Aliases."
-        }
-    }
-    catch {
-        Write-ErrorMsg "Failed to install winget via package: $_"
-        Write-ErrorMsg "winget is required for software installations. Cannot continue."
-        Write-Host "In Windows Sandbox, you may need to enable App Installer via Group Policy or use a .wsb configuration file."
-        Write-Host "Please see: https://learn.microsoft.com/en-us/windows/package-manager/winget/"
-        $script:failureCount++
-        return
-    }
+    Write-Warning "winget not available - will use direct downloads for software installation"
 }
 
-# Install Windows Terminal if not already installed
-$terminalInstalled = Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue
-if (-not $terminalInstalled) {
-    Write-Info "Windows Terminal not found. Installing..."
-    try {
-        winget install --id Microsoft.WindowsTerminal --silent --accept-source-agreements --accept-package-agreements
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Windows Terminal installed successfully"
-        } else {
-            Write-Warning "Windows Terminal installation may have failed (exit code: $LASTEXITCODE)"
+# Install Windows Terminal if not already installed (only if winget is available)
+if ($wingetAvailable) {
+    $terminalInstalled = Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue
+    if (-not $terminalInstalled) {
+        Write-Info "Windows Terminal not found. Installing..."
+        try {
+            winget install --id Microsoft.WindowsTerminal --silent --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Windows Terminal installed successfully"
+            } else {
+                Write-Warning "Windows Terminal installation may have failed (exit code: $LASTEXITCODE)"
+                $script:warningCount++
+            }
+        }
+        catch {
+            Write-Warning "Failed to install Windows Terminal: $_"
             $script:warningCount++
         }
-    }
-    catch {
-        Write-Warning "Failed to install Windows Terminal: $_"
-        $script:warningCount++
+    } else {
+        Write-Info "Windows Terminal is already installed"
     }
 } else {
-    Write-Info "Windows Terminal is already installed"
+    Write-Info "Skipping Windows Terminal installation (requires winget or Microsoft Store)"
 }
 
 Write-Host ""
@@ -408,79 +361,64 @@ Invoke-Step "Unpin Microsoft Edge from taskbar" {
 #endregion
 
 #region Software Installation (SLOW - Run in Parallel)
-Write-Host "`n--- SOFTWARE INSTALLATION (Parallel) ---`n" -ForegroundColor Yellow
+Write-Host "`n--- SOFTWARE INSTALLATION ---`n" -ForegroundColor Yellow
 
-# Skip software installation if winget is not available
-if (-not $wingetAvailable) {
-    Write-Warning "Skipping software installations (winget not available)"
-    Write-Host ""
-    # Skip to next section
-} else {
-    Write-Info "Starting parallel software installations..."
+if ($wingetAvailable) {
+    Write-Info "Using winget for software installation..."
 
-# Define software to install in parallel
-$softwareJobs = @()
+    # Define software to install in parallel
+    $softwareJobs = @()
 
-$parallelInstalls = @(
-    @{ Name = "Google Chrome"; Id = "Google.Chrome" }
-    @{ Name = "Visual Studio Code"; Id = "Microsoft.VisualStudioCode" }
-    @{ Name = "VLC Media Player"; Id = "VideoLAN.VLC" }
-    @{ Name = "Everything Search"; Id = "voidtools.Everything" }
-    @{ Name = "7-Zip"; Id = "7zip.7zip" }
-    @{ Name = "Python"; Id = "Python.Python.3.12" }
-    @{ Name = "PowerToys"; Id = "Microsoft.PowerToys" }
-)
+    $parallelInstalls = @(
+        @{ Name = "Google Chrome"; Id = "Google.Chrome" }
+        @{ Name = "Visual Studio Code"; Id = "Microsoft.VisualStudioCode" }
+        @{ Name = "VLC Media Player"; Id = "VideoLAN.VLC" }
+        @{ Name = "Everything Search"; Id = "voidtools.Everything" }
+        @{ Name = "7-Zip"; Id = "7zip.7zip" }
+        @{ Name = "Python"; Id = "Python.Python.3.12" }
+        @{ Name = "PowerToys"; Id = "Microsoft.PowerToys" }
+    )
 
-# Add gaming software if enabled
-if ($config.gaming -eq $true) {
-    $parallelInstalls += @{ Name = "Steam"; Id = "Valve.Steam" }
-    $parallelInstalls += @{ Name = "Discord"; Id = "Discord.Discord" }
-}
+    # Add gaming software if enabled
+    if ($config.gaming -eq $true) {
+        $parallelInstalls += @{ Name = "Steam"; Id = "Valve.Steam" }
+        $parallelInstalls += @{ Name = "Discord"; Id = "Discord.Discord" }
+    }
 
-# Start all installations as background jobs
-foreach ($software in $parallelInstalls) {
-    $job = Start-Job -ScriptBlock {
-        param($Id, $Name)
-        $result = winget install --id $Id --silent --accept-source-agreements --accept-package-agreements 2>&1
-        return @{
-            Name = $Name
-            Success = $LASTEXITCODE -eq 0
-            Output = $result
+    # Start all installations as background jobs
+    foreach ($software in $parallelInstalls) {
+        $job = Start-Job -ScriptBlock {
+            param($Id, $Name)
+            $result = winget install --id $Id --silent --accept-source-agreements --accept-package-agreements 2>&1
+            return @{
+                Name = $Name
+                Success = $LASTEXITCODE -eq 0
+                Output = $result
+            }
+        } -ArgumentList $software.Id, $software.Name
+
+        $softwareJobs += @{
+            Job = $job
+            Name = $software.Name
         }
-    } -ArgumentList $software.Id, $software.Name
-
-    $softwareJobs += @{
-        Job = $job
-        Name = $software.Name
     }
-}
 
-Write-Info "Waiting for $($softwareJobs.Count) parallel installations to complete..."
+    Write-Info "Waiting for $($softwareJobs.Count) parallel installations to complete..."
 
-# Wait for all jobs and report results
-foreach ($jobInfo in $softwareJobs) {
-    $result = Receive-Job -Job $jobInfo.Job -Wait
-    Remove-Job -Job $jobInfo.Job
+    # Wait for all jobs and report results
+    foreach ($jobInfo in $softwareJobs) {
+        $result = Receive-Job -Job $jobInfo.Job -Wait
+        Remove-Job -Job $jobInfo.Job
 
-    if ($result.Success -or $result.Output -like "*already installed*" -or $result.Output -like "*No available upgrade*") {
-        Write-Success "$($jobInfo.Name) completed"
-        $script:successCount++
-    } else {
-        Write-ErrorMsg "$($jobInfo.Name) failed"
-        $script:failureCount++
+        if ($result.Success -or $result.Output -like "*already installed*" -or $result.Output -like "*No available upgrade*") {
+            Write-Success "$($jobInfo.Name) completed"
+            $script:successCount++
+        } else {
+            Write-ErrorMsg "$($jobInfo.Name) failed"
+            $script:failureCount++
+        }
     }
-}
 
-    Write-Host ""
-}
-
-# Sequential installations (dependencies required)
-Write-Host "--- SOFTWARE INSTALLATION (Sequential) ---`n" -ForegroundColor Yellow
-
-if (-not $wingetAvailable) {
-    Write-Warning "Skipping sequential software installations (winget not available)"
-    Write-Host ""
-} else {
     Invoke-Step "Install Git" {
         winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
     }
@@ -488,6 +426,47 @@ if (-not $wingetAvailable) {
     Invoke-Step "Install nvm-windows" {
         winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
     }
+} else {
+    Write-Info "Using direct downloads for software installation..."
+
+    Invoke-Step "Install Google Chrome" {
+        $chromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+        $chromePath = "$env:TEMP\chrome_installer.exe"
+        Invoke-WebRequest -Uri $chromeUrl -OutFile $chromePath -UseBasicParsing
+        Start-Process -FilePath $chromePath -ArgumentList "/silent", "/install" -Wait -NoNewWindow
+    }
+
+    Invoke-Step "Install Visual Studio Code" {
+        $vscodeUrl = "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64"
+        $vscodePath = "$env:TEMP\vscode_installer.exe"
+        Invoke-WebRequest -Uri $vscodeUrl -OutFile $vscodePath -UseBasicParsing
+        Start-Process -FilePath $vscodePath -ArgumentList "/VERYSILENT", "/NORESTART", "/MERGETASKS=!runcode" -Wait -NoNewWindow
+    }
+
+    Invoke-Step "Install Git" {
+        $gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe"
+        $gitPath = "$env:TEMP\git_installer.exe"
+        Invoke-WebRequest -Uri $gitUrl -OutFile $gitPath -UseBasicParsing
+        Start-Process -FilePath $gitPath -ArgumentList "/VERYSILENT", "/NORESTART" -Wait -NoNewWindow
+    }
+
+    Invoke-Step "Install 7-Zip" {
+        $zipUrl = "https://www.7-zip.org/a/7z2408-x64.exe"
+        $zipPath = "$env:TEMP\7zip_installer.exe"
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+        Start-Process -FilePath $zipPath -ArgumentList "/S" -Wait -NoNewWindow
+    }
+
+    Invoke-Step "Install Python" {
+        $pythonUrl = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+        $pythonPath = "$env:TEMP\python_installer.exe"
+        Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonPath -UseBasicParsing
+        Start-Process -FilePath $pythonPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait -NoNewWindow
+    }
+
+    Write-Info "Skipping some software (no direct download URLs available): VLC, Everything, PowerToys, nvm"
+    $script:warningCount++
+}
 
     # Install Node.js LTS via nvm (needs to run after nvm installation)
     Invoke-Step "Install Node.js LTS via nvm" {
