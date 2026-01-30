@@ -142,8 +142,63 @@ Write-Info "Running on PowerShell $($PSVersionTable.PSVersion)"
 $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
 if (-not $wingetAvailable) {
     Write-Warning "winget (Windows Package Manager) is not installed or not in PATH"
-    Write-Warning "Software installations will be skipped. Install winget manually or update Windows."
-    $script:warningCount++
+    Write-Info "Attempting to install winget..."
+
+    try {
+        # Download and install VCLibs dependency
+        Write-Info "Downloading VCLibs dependency..."
+        $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        $vcLibsPath = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
+        Add-AppxPackage -Path $vcLibsPath
+        Write-Success "VCLibs dependency installed"
+
+        # Download and install App Installer (includes winget)
+        Write-Info "Downloading App Installer (winget)..."
+        $wingetUrl = "https://aka.ms/getwinget"
+        $wingetPath = "$env:TEMP\Microsoft.DesktopAppInstaller.msixbundle"
+        Invoke-WebRequest -Uri $wingetUrl -OutFile $wingetPath -UseBasicParsing
+        Add-AppxPackage -Path $wingetPath
+        Write-Success "App Installer installed"
+
+        # Refresh PATH and check if winget is now available
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+
+        if (-not $wingetAvailable) {
+            throw "winget was installed but is not available in PATH. Try restarting your terminal."
+        }
+
+        Write-Success "winget is now available"
+    }
+    catch {
+        Write-ErrorMsg "Failed to install winget: $_"
+        Write-ErrorMsg "winget is required for software installations. Cannot continue."
+        Write-Host "Please install winget manually from: https://aka.ms/getwinget"
+        $script:failureCount++
+        return
+    }
+}
+
+# Install Windows Terminal if not already installed
+$terminalInstalled = Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue
+if (-not $terminalInstalled) {
+    Write-Info "Windows Terminal not found. Installing..."
+    try {
+        winget install --id Microsoft.WindowsTerminal --silent --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Windows Terminal installed successfully"
+        } else {
+            Write-Warning "Windows Terminal installation may have failed (exit code: $LASTEXITCODE)"
+            $script:warningCount++
+        }
+    }
+    catch {
+        Write-Warning "Failed to install Windows Terminal: $_"
+        $script:warningCount++
+    }
+} else {
+    Write-Info "Windows Terminal is already installed"
 }
 
 Write-Host ""
