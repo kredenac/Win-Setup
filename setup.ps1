@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 
-<#
+<# V 1
 .SYNOPSIS
     Windows Setup Script - Automated configuration for new Windows installations
 .DESCRIPTION
