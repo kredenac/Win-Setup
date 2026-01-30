@@ -336,6 +336,120 @@ Invoke-Step "Configure Git credential manager" {
 }
 #endregion
 
+#region PowerShell Profile Configuration
+Write-Host "`n--- POWERSHELL PROFILE ---`n" -ForegroundColor Yellow
+
+Invoke-Step "Install posh-git module" {
+    Install-Module -Name posh-git -Scope CurrentUser -Force -AllowClobber
+}
+
+Invoke-Step "Configure PowerShell profile with Git aliases" {
+    $profileContent = @'
+# Import posh-git for Git prompt integration
+Import-Module posh-git
+
+# Git shortcuts
+function Get-GitCommit { & git add -A; git commit -m $args }
+New-Alias -Name gac -Value Get-GitCommit
+
+function Get-GitStatus { & git status }
+New-Alias -Name gs -Value Get-GitStatus
+
+function Get-GitMerge { & git fetch; git merge origin/main }
+New-Alias -Name gfm -Value Get-GitMerge
+
+function GitSquashUnpushed {
+    param([string]$Message)
+
+    $upstream = git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
+    if (-not $upstream) {
+        Write-Error "No upstream branch set. Push first or set upstream with 'git push --set-upstream origin <branch>'"
+        return
+    }
+
+    $unpulled = [int](git rev-list --count "$upstream..HEAD")
+    if ($unpulled -lt 2) {
+        Write-Host "Nothing to squash ($unpulled unpushed commit)."
+        return
+    }
+
+    git reset --soft "HEAD~$unpulled"
+    git commit -m "$Message"
+    Write-Host "Squashed $unpulled commits into one."
+}
+
+New-Alias -Name gsq -Value GitSquashUnpushed
+
+# Custom prompt with posh-git integration and Windows Terminal support
+function prompt
+{
+    $loc = Get-Location
+
+    $prompt = & $GitPromptScriptBlock
+
+    $prompt += "$([char]27)]9;12$([char]7)"
+    if ($loc.Provider.Name -eq "FileSystem")
+    {
+        $prompt += "$([char]27)]9;9;`"$($loc.ProviderPath)`"$([char]27)\"
+    }
+
+    $prompt
+}
+'@
+
+    # Get PowerShell profile path
+    $profilePath = $PROFILE.CurrentUserAllHosts
+
+    # Create profile directory if it doesn't exist
+    $profileDir = Split-Path -Parent $profilePath
+    if (-not (Test-Path $profileDir)) {
+        New-Item -Path $profileDir -ItemType Directory -Force | Out-Null
+    }
+
+    # Write profile content
+    Set-Content -Path $profilePath -Value $profileContent -Force
+    Write-Info "PowerShell profile configured at: $profilePath"
+}
+
+Invoke-Step "Configure Windows Terminal keybindings" {
+    $settingsPath = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+
+    if (Test-Path $settingsPath) {
+        # Read and parse JSON
+        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+
+        # Ensure keybindings array exists
+        if (-not $settings.keybindings) {
+            $settings | Add-Member -MemberType NoteProperty -Name "keybindings" -Value @()
+        }
+
+        # Remove existing bindings for these keys if they exist
+        $settings.keybindings = @($settings.keybindings | Where-Object {
+            $_.keys -ne "ctrl+shift+d" -and $_.keys -ne "ctrl+shift+s"
+        })
+
+        # Add new keybindings
+        $settings.keybindings += @(
+            @{
+                id = "Terminal.DuplicatePaneRight"
+                keys = "ctrl+shift+d"
+            },
+            @{
+                id = "Terminal.DuplicatePaneDown"
+                keys = "ctrl+shift+s"
+            }
+        )
+
+        # Save settings back to file
+        $settings | ConvertTo-Json -Depth 100 | Set-Content $settingsPath -Encoding UTF8
+        Write-Success "Windows Terminal keybindings configured successfully!"
+    } else {
+        Write-Warning "Windows Terminal settings file not found. Install Windows Terminal first."
+        $script:warningCount++
+    }
+}
+#endregion
+
 #region Summary
 Write-Host "`n========================================" -ForegroundColor Magenta
 Write-Host "  SETUP COMPLETE" -ForegroundColor Magenta
