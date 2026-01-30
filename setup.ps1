@@ -153,6 +153,23 @@ if (-not $wingetAvailable) {
         Add-AppxPackage -Path $vcLibsPath
         Write-Success "VCLibs dependency installed"
 
+        # Download and install UI.Xaml dependency (often needed)
+        Write-Info "Downloading UI.Xaml dependency..."
+        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
+        $uiXamlPath = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
+        Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
+        Add-AppxPackage -Path $uiXamlPath
+        Write-Success "UI.Xaml dependency installed"
+
+        # Download and install Windows App Runtime dependency
+        Write-Info "Downloading Windows App Runtime dependency..."
+        # Using the 1.8.x runtime that matches the requirement
+        $appRuntimeUrl = "https://github.com/microsoft/WindowsAppSDK/releases/download/v1.8.1/Microsoft.WindowsAppRuntime.1.8-x64.msix"
+        $appRuntimePath = "$env:TEMP\Microsoft.WindowsAppRuntime.1.8-x64.msix"
+        Invoke-WebRequest -Uri $appRuntimeUrl -OutFile $appRuntimePath -UseBasicParsing
+        Add-AppxPackage -Path $appRuntimePath
+        Write-Success "Windows App Runtime dependency installed"
+
         # Download and install App Installer (includes winget)
         Write-Info "Downloading App Installer (winget)..."
         $wingetUrl = "https://aka.ms/getwinget"
