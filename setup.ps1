@@ -145,105 +145,51 @@ if (-not $wingetAvailable) {
     Write-Info "Attempting to install winget..."
 
     try {
-        # Download and install VCLibs dependency
+        # For Windows Sandbox and minimal environments, use standalone winget
+        Write-Info "Downloading standalone winget..."
+
+        # Download the latest winget release
+        $wingetRelease = "v1.9.25200"
+        $wingetZipUrl = "https://github.com/microsoft/winget-cli/releases/download/$wingetRelease/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        $wingetZipPath = "$env:TEMP\winget.msixbundle"
+
+        # Download VCLibs dependency first
         Write-Info "Downloading VCLibs dependency..."
         $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
         $vcLibsPath = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
         Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
         Add-AppxPackage -Path $vcLibsPath -ErrorAction SilentlyContinue
-        Write-Success "VCLibs dependency installed"
+        Write-Success "VCLibs installed"
 
-        # Download and install UI.Xaml dependency (often needed)
+        # Download UI.Xaml dependency
         Write-Info "Downloading UI.Xaml dependency..."
         $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
         $uiXamlPath = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
         Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
         Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
-        Write-Success "UI.Xaml dependency installed"
+        Write-Success "UI.Xaml installed"
 
-        # Download and install App Installer (includes winget)
-        Write-Info "Downloading App Installer (winget)..."
-        $wingetUrl = "https://aka.ms/getwinget"
-        $wingetPath = "$env:TEMP\Microsoft.DesktopAppInstaller.msixbundle"
-        Invoke-WebRequest -Uri $wingetUrl -OutFile $wingetPath -UseBasicParsing
+        # Try downloading and installing winget
+        Invoke-WebRequest -Uri $wingetZipUrl -OutFile $wingetZipPath -UseBasicParsing
+        Add-AppxPackage -Path $wingetZipPath -ErrorAction Stop
+        Write-Success "winget package installed"
 
-        # Try to install App Installer
-        try {
-            Add-AppxPackage -Path $wingetPath
-            Write-Success "App Installer installed"
-        }
-        catch {
-            # If it fails due to missing Windows App Runtime, try to install it
-            if ($_.Exception.Message -like "*WindowsAppRuntime*") {
-                Write-Warning "App Installer requires Windows App Runtime. Attempting alternative installation..."
-
-                # Try downloading an older version of winget that doesn't require Windows App Runtime
-                Write-Info "Downloading older version of App Installer..."
-                $oldWingetUrl = "https://github.com/microsoft/winget-cli/releases/download/v1.4.10173/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-                $oldWingetPath = "$env:TEMP\Microsoft.DesktopAppInstaller_old.msixbundle"
-                Invoke-WebRequest -Uri $oldWingetUrl -OutFile $oldWingetPath -UseBasicParsing
-                Add-AppxPackage -Path $oldWingetPath
-                Write-Success "App Installer (older version) installed"
-            }
-            else {
-                throw
-            }
-        }
-
-        # Wait for App Installer to register (can take a few seconds)
-        Write-Info "Waiting for winget to register..."
-        Start-Sleep -Seconds 3
-
-        # Refresh PATH and check if winget is now available
+        # Wait and check for winget
+        Start-Sleep -Seconds 5
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
 
-        # Try to find winget multiple times (can take a moment to register)
-        $wingetAvailable = $false
-        $maxRetries = 5
-        for ($i = 1; $i -le $maxRetries; $i++) {
-            $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-            if ($wingetAvailable) {
-                break
-            }
-
-            if ($i -lt $maxRetries) {
-                Write-Info "winget not found yet, waiting... (attempt $i/$maxRetries)"
-                Start-Sleep -Seconds 2
-                # Refresh PATH again
-                $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-            }
+        if ($wingetAvailable) {
+            Write-Success "winget is now available"
+        } else {
+            throw "winget package installed but executable not found. This may be due to Windows Sandbox restrictions on App Execution Aliases."
         }
-
-        # If still not found, try adding common winget locations to PATH manually
-        if (-not $wingetAvailable) {
-            Write-Info "Trying to locate winget manually..."
-            $commonWingetPaths = @(
-                "$env:LOCALAPPDATA\Microsoft\WindowsApps",
-                "$env:ProgramFiles\WindowsApps"
-            )
-
-            foreach ($path in $commonWingetPaths) {
-                if (Test-Path "$path\winget.exe") {
-                    $env:Path = "$path;$env:Path"
-                    $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-                    if ($wingetAvailable) {
-                        Write-Info "Found winget at: $path"
-                        break
-                    }
-                }
-            }
-        }
-
-        if (-not $wingetAvailable) {
-            throw "winget was installed but is not available in PATH. Try restarting your terminal or check if App Execution Aliases are enabled in Windows Settings > Apps > Advanced app settings."
-        }
-
-        Write-Success "winget is now available"
     }
     catch {
-        Write-ErrorMsg "Failed to install winget: $_"
+        Write-ErrorMsg "Failed to install winget via package: $_"
         Write-ErrorMsg "winget is required for software installations. Cannot continue."
-        Write-Host "Please install winget manually from: https://aka.ms/getwinget"
+        Write-Host "In Windows Sandbox, you may need to enable App Installer via Group Policy or use a .wsb configuration file."
+        Write-Host "Please see: https://learn.microsoft.com/en-us/windows/package-manager/winget/"
         $script:failureCount++
         return
     }
