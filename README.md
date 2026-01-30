@@ -9,7 +9,7 @@ Automated Windows configuration script for new machine setup. Designed for devel
 Run directly from an elevated PowerShell session:
 
 ```powershell
-irm https://raw.githubusercontent.com/yourusername/win-setup/main/setup.ps1 | iex
+irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
 ```
 
 **Note:** This method uses default configuration. For custom settings, use Option 2.
