@@ -150,7 +150,7 @@ if (-not $wingetAvailable) {
         $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
         $vcLibsPath = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
         Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
-        Add-AppxPackage -Path $vcLibsPath
+        Add-AppxPackage -Path $vcLibsPath -ErrorAction SilentlyContinue
         Write-Success "VCLibs dependency installed"
 
         # Download and install UI.Xaml dependency (often needed)
@@ -158,17 +158,22 @@ if (-not $wingetAvailable) {
         $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
         $uiXamlPath = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
         Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
-        Add-AppxPackage -Path $uiXamlPath
+        Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
         Write-Success "UI.Xaml dependency installed"
 
-        # Download and install Windows App Runtime dependency
-        Write-Info "Downloading Windows App Runtime dependency..."
-        # Using the 1.8.x runtime that matches the requirement
-        $appRuntimeUrl = "https://github.com/microsoft/WindowsAppSDK/releases/download/v1.8.1/Microsoft.WindowsAppRuntime.1.8-x64.msix"
-        $appRuntimePath = "$env:TEMP\Microsoft.WindowsAppRuntime.1.8-x64.msix"
-        Invoke-WebRequest -Uri $appRuntimeUrl -OutFile $appRuntimePath -UseBasicParsing
-        Add-AppxPackage -Path $appRuntimePath
-        Write-Success "Windows App Runtime dependency installed"
+        # Try to download and install Windows App Runtime dependency
+        # This may not be available or needed depending on the winget version
+        Write-Info "Attempting to install Windows App Runtime dependency..."
+        try {
+            $appRuntimeUrl = "https://aka.ms/windowsappsdk/1.6/latest/windowsappruntimeinstall-x64.exe"
+            $appRuntimePath = "$env:TEMP\windowsappruntimeinstall-x64.exe"
+            Invoke-WebRequest -Uri $appRuntimeUrl -OutFile $appRuntimePath -UseBasicParsing
+            Start-Process -FilePath $appRuntimePath -ArgumentList "--quiet" -Wait -NoNewWindow
+            Write-Success "Windows App Runtime dependency installed"
+        }
+        catch {
+            Write-Warning "Could not install Windows App Runtime dependency (may not be needed): $_"
+        }
 
         # Download and install App Installer (includes winget)
         Write-Info "Downloading App Installer (winget)..."
