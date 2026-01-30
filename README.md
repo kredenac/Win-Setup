@@ -47,7 +47,7 @@ $PSVersionTable.PSVersion
 - Removes weather/search highlights from taskbar
 - Removes widgets, Meet Now, and Task View button from taskbar
 - Unpins Microsoft Store, Copilot, and Microsoft Edge from taskbar
-- Pins Chrome, Windows Terminal, and Everything to taskbar (in that order, after File Explorer)
+- Pins Chrome, Windows Terminal, Visual Studio Code, and Everything to taskbar (in that order, after File Explorer)
 - Disables web search results in Start Menu (keeps local search)
 
 ### System Settings

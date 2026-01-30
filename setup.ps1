@@ -525,6 +525,27 @@ Invoke-Step "Pin Windows Terminal to taskbar" {
     }
 }
 
+Invoke-Step "Pin Visual Studio Code to taskbar" {
+    # Common VS Code installation paths
+    $vscodePaths = @(
+        "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe",
+        "$env:ProgramFiles\Microsoft VS Code\Code.exe",
+        "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe"
+    )
+
+    $pinned = $false
+    foreach ($path in $vscodePaths) {
+        if (Test-Path $path) {
+            $pinned = Pin-ToTaskbar "VS Code" $path
+            break
+        }
+    }
+
+    if (-not $pinned) {
+        throw "VS Code not found in expected locations"
+    }
+}
+
 Invoke-Step "Pin Everything to taskbar" {
     # Common Everything installation paths
     $everythingPaths = @(
