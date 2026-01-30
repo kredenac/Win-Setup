@@ -2,6 +2,32 @@
 
 Automated Windows configuration script for new machine setup. Designed for development and general use.
 
+## How to Run
+
+### Option 1: One-liner (Remote Execution)
+
+Run directly from an elevated PowerShell session:
+
+```powershell
+irm https://raw.githubusercontent.com/yourusername/win-setup/main/setup.ps1 | iex
+```
+
+**Note:** This method uses default configuration. For custom settings, use Option 2.
+
+### Option 2: Simple Execution (Custom Configuration)
+
+1. Download or clone this repository to your machine
+2. Edit `config.json` with your Git settings
+3. Right-click **Windows Terminal** and select **Run as Administrator**
+4. Navigate to the script directory:
+   ```powershell
+   cd C:\path\to\win-setup
+   ```
+5. Run the script:
+   ```powershell
+   .\setup.ps1
+   ```
+
 ## What This Script Does
 
 ### Windows UI Customization
@@ -73,32 +99,6 @@ Edit `config.json` to customize settings:
 - **git.username**: Your Git username
 - **git.email**: Your Git email address
 - **gaming**: Set to `true` to install Steam and Discord
-
-## How to Run
-
-### Option 1: Simple Execution (Recommended)
-
-1. Download or clone this repository to your machine
-2. Edit `config.json` with your Git settings
-3. Right-click **Windows Terminal** and select **Run as Administrator**
-4. Navigate to the script directory:
-   ```powershell
-   cd C:\path\to\win-setup
-   ```
-5. Run the script:
-   ```powershell
-   .\setup.ps1
-   ```
-
-### Option 2: One-liner (Remote Execution)
-
-Run directly from an elevated PowerShell session:
-
-```powershell
-irm https://raw.githubusercontent.com/yourusername/win-setup/main/setup.ps1 | iex
-```
-
-**Note:** This method uses default configuration. For custom settings, use Option 1.
 
 ## After Running
 
