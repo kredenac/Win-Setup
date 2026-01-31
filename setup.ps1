@@ -458,6 +458,10 @@ if ($wingetAvailable) {
             $script:warningCount++
         }
     }
+
+    Invoke-Step "Install Claude CLI (Claude Code)" {
+        irm https://claude.ai/install.ps1 | iex
+    }
 } else {
     Write-Info "Using direct downloads for software installation..."
 
