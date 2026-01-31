@@ -4,7 +4,7 @@ Automated Windows configuration script for new machine setup. Designed for devel
 
 ## How to Run
 
-**IMPORTANT:** This script requires **PowerShell 7+** (not Windows PowerShell 5.1). If you run it in Windows PowerShell by mistake, the script will automatically install PowerShell 7 and prompt you to re-run it.
+This script requires **PowerShell 7+** (not Windows PowerShell 5.1). If you run it in Windows PowerShell by mistake, the script will automatically install PowerShell 7 and prompt you to re-run it.
 
 ### Option 1: One-liner (Remote Execution)
 
@@ -29,12 +29,6 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
    ```powershell
    .\setup.ps1
    ```
-
-**To verify you're using PowerShell 7+:**
-```powershell
-$PSVersionTable.PSVersion
-# Should show Major version 7 or higher
-```
 
 ## What This Script Does
 
@@ -83,14 +77,6 @@ $PSVersionTable.PSVersion
 - Sets default editor to VS Code
 - Configures credential manager
 
-## Requirements
-
-- **Windows 10 (20H2+) or Windows 11**
-- **PowerShell 7+** (not Windows PowerShell 5.1)
-- **Windows Terminal** (pre-installed on Windows 11)
-- **Administrator privileges**
-- **Internet connection** for software downloads
-
 ## Configuration
 
 Edit `config.json` to customize settings:
@@ -115,18 +101,6 @@ Edit `config.json` to customize settings:
 2. You'll be prompted to restart your computer
 3. Some changes (UAC, Developer Mode, taskbar settings) require a restart to take effect
 
-## Post-Setup Manual Steps
-
-Some items may need manual attention:
-
-- **Monitor refresh rate**: If automatic detection fails, set manually in Display Settings
-- **Taskbar unpinning**: If Microsoft Store wasn't unpinned, right-click and unpin manually
-- **nvm**: If Node.js installation via nvm fails, open a new terminal and run:
-  ```powershell
-  nvm install lts
-  nvm use lts
-  ```
-
 ## Troubleshooting
 
 ### "Running on Windows PowerShell" warning
@@ -136,32 +110,17 @@ If you see a warning about Windows PowerShell and the script installs PowerShell
 3. Open a new **PowerShell 7** window (not Windows PowerShell) as Administrator
 4. Re-run the script
 
-**To open PowerShell 7:**
-- Search for "PowerShell 7" in Start Menu, or
-- Open Windows Terminal (which uses PowerShell 7 by default), or
-- Run `pwsh` from any command prompt
-
 ### "Script cannot be loaded because running scripts is disabled"
 Run this command in an elevated PowerShell session:
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 
-### "winget not found"
-This usually happens if you're running Windows PowerShell instead of PowerShell 7. The script will detect this and install PowerShell 7 automatically. If winget is still not found after switching to PowerShell 7, ensure you're on Windows 10 20H2+ or Windows 11 and update Windows.
-
-### Software installation fails
-Check your internet connection. You can re-run the script safely - it will skip already-installed software.
-
-### Changes not taking effect
-Restart your computer. Many Windows registry changes require a restart or logoff/logon.
-
 ## Safety
 
 - Script is idempotent - safe to run multiple times
 - Each task is wrapped in error handling - failures won't stop the entire script
 - Color-coded output shows success/warning/error status for each step
-- No restore point is created (changes are intentional and documented)
 
 ## License
 
