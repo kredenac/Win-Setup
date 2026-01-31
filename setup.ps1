@@ -84,56 +84,34 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Warning "Running on Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
     Write-Warning "This script requires PowerShell 7+. Installing PowerShell 7..."
 
-    # Check if winget is available in Windows PowerShell
-    $wingetAvailable = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+    # Download and install PS7 directly (faster than winget)
+    Write-Info "Downloading PowerShell 7 from GitHub..."
+    try {
+        $ps7Version = "7.4.7"
+        $url = "https://github.com/PowerShell/PowerShell/releases/download/v$ps7Version/PowerShell-$ps7Version-win-x64.msi"
+        $output = "$env:TEMP\PowerShell-$ps7Version-win-x64.msi"
 
-    if ($wingetAvailable) {
-        Write-Info "Installing PowerShell 7 via winget..."
-        try {
-            winget install --id Microsoft.PowerShell --silent --accept-source-agreements --accept-package-agreements
-            Write-Success "PowerShell 7 installed successfully!"
-            Write-Host "`n" -NoNewline
-            Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
-            Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
-            Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
-            return
-        }
-        catch {
-            Write-ErrorMsg "Failed to install PowerShell 7 via winget: $_"
-            Write-Warning "Falling back to direct download method..."
-        }
+        # Download the MSI (disable progress bar for faster download)
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+        Write-Success "Downloaded PowerShell 7 installer"
+
+        # Install silently
+        Write-Info "Installing PowerShell 7..."
+        Start-Process msiexec.exe -ArgumentList "/i `"$output`" /quiet /norestart" -Wait -NoNewWindow
+
+        Write-Success "PowerShell 7 installed successfully!"
+        Write-Host "`n" -NoNewline
+        Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
+        Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
+        Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
+        return
     }
-
-    # Fallback: Download and install PS7 directly (for Windows Sandbox or when winget fails)
-    if (-not $wingetAvailable -or $LASTEXITCODE -ne 0) {
-        Write-Info "Downloading PowerShell 7 from GitHub..."
-        try {
-            $ps7Version = "7.4.7"
-            $url = "https://github.com/PowerShell/PowerShell/releases/download/v$ps7Version/PowerShell-$ps7Version-win-x64.msi"
-            $output = "$env:TEMP\PowerShell-$ps7Version-win-x64.msi"
-
-            # Download the MSI (disable progress bar for faster download)
-            $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-            Write-Success "Downloaded PowerShell 7 installer"
-
-            # Install silently
-            Write-Info "Installing PowerShell 7..."
-            Start-Process msiexec.exe -ArgumentList "/i `"$output`" /quiet /norestart" -Wait -NoNewWindow
-
-            Write-Success "PowerShell 7 installed successfully!"
-            Write-Host "`n" -NoNewline
-            Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
-            Write-Host "Please close this Windows PowerShell window and re-run this script in PowerShell 7."
-            Write-Host "You can find PowerShell 7 in the Start Menu as 'PowerShell 7' or run 'pwsh' from the command line.`n"
-            return
-        }
-        catch {
-            Write-ErrorMsg "Failed to install PowerShell 7: $_"
-            Write-Host "Please install PowerShell 7 manually from: https://aka.ms/powershell"
-            $global:LASTEXITCODE = 1
-            return
-        }
+    catch {
+        Write-ErrorMsg "Failed to install PowerShell 7: $_"
+        Write-Host "Please install PowerShell 7 manually from: https://aka.ms/powershell"
+        $global:LASTEXITCODE = 1
+        return
     }
 }
 
