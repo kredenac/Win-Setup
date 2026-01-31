@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 
-<# V 1
+<# V 2
 .SYNOPSIS
     Windows Setup Script - Automated configuration for new Windows installations
 .DESCRIPTION
@@ -354,7 +354,6 @@ if ($wingetAvailable) {
         @{ Name = "VLC Media Player"; Id = "VideoLAN.VLC" }
         @{ Name = "Everything Search"; Id = "voidtools.Everything" }
         @{ Name = "7-Zip"; Id = "7zip.7zip" }
-        @{ Name = "Python"; Id = "Python.Python.3.12"; Args = "/quiet PrependPath=1 Include_pip=1 Include_test=0 Include_doc=0" }
         @{ Name = "PowerToys"; Id = "Microsoft.PowerToys" }
     )
 
@@ -386,6 +385,128 @@ if ($wingetAvailable) {
         }
     }
 
+    # Add Python as parallel job (direct download, faster than winget)
+    $pythonJob = Start-Job -ScriptBlock {
+        $pythonVersion = "3.12.8"
+        $url = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+        $output = "$env:TEMP\python-$pythonVersion-amd64.exe"
+
+        try {
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+            Start-Process -FilePath $output -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_pip=1', 'Include_test=0', 'Include_doc=0' -Wait -NoNewWindow
+
+            $pythonInstallPath = "$env:ProgramFiles\Python312"
+            if (Test-Path $pythonInstallPath) {
+                $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                if ($currentPath -notlike "*$pythonInstallPath*") {
+                    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
+                }
+            }
+
+            return @{
+                Name = "Python (direct download)"
+                Success = $true
+                Output = "Installed successfully"
+            }
+        }
+        catch {
+            return @{
+                Name = "Python (direct download)"
+                Success = $false
+                Output = $_.Exception.Message
+            }
+        }
+    }
+
+    $softwareJobs += @{
+        Job = $pythonJob
+        Name = "Python (direct download)"
+    }
+
+    # Add Git as parallel job (direct download)
+    $gitJob = Start-Job -ScriptBlock {
+        try {
+            $gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe"
+            $gitPath = "$env:TEMP\git_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $gitUrl -OutFile $gitPath -UseBasicParsing
+            Start-Process -FilePath $gitPath -ArgumentList "/VERYSILENT", "/NORESTART" -Wait -NoNewWindow
+
+            return @{
+                Name = "Git (direct download)"
+                Success = $true
+                Output = "Installed successfully"
+            }
+        }
+        catch {
+            return @{
+                Name = "Git (direct download)"
+                Success = $false
+                Output = $_.Exception.Message
+            }
+        }
+    }
+
+    $softwareJobs += @{
+        Job = $gitJob
+        Name = "Git (direct download)"
+    }
+
+    # Add nvm-windows as parallel job (direct download)
+    $nvmJob = Start-Job -ScriptBlock {
+        try {
+            $nvmVersion = "1.1.12"
+            $nvmUrl = "https://github.com/coreybutler/nvm-windows/releases/download/$nvmVersion/nvm-setup.exe"
+            $nvmPath = "$env:TEMP\nvm-setup.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $nvmUrl -OutFile $nvmPath -UseBasicParsing
+            Start-Process -FilePath $nvmPath -ArgumentList "/VERYSILENT" -Wait -NoNewWindow
+
+            return @{
+                Name = "nvm-windows (direct download)"
+                Success = $true
+                Output = "Installed successfully"
+            }
+        }
+        catch {
+            return @{
+                Name = "nvm-windows (direct download)"
+                Success = $false
+                Output = $_.Exception.Message
+            }
+        }
+    }
+
+    $softwareJobs += @{
+        Job = $nvmJob
+        Name = "nvm-windows (direct download)"
+    }
+
+    # Add Claude CLI as parallel job
+    $claudeJob = Start-Job -ScriptBlock {
+        try {
+            $result = Invoke-Expression "& { $(Invoke-RestMethod https://claude.ai/install.ps1) }" 2>&1
+            return @{
+                Name = "Claude CLI (Claude Code)"
+                Success = $true
+                Output = "Installed successfully"
+            }
+        }
+        catch {
+            return @{
+                Name = "Claude CLI (Claude Code)"
+                Success = $false
+                Output = $_.Exception.Message
+            }
+        }
+    }
+
+    $softwareJobs += @{
+        Job = $claudeJob
+        Name = "Claude CLI (Claude Code)"
+    }
+
     Write-Info "Waiting for $($softwareJobs.Count) parallel installations to complete..."
 
     # Wait for ALL jobs to complete first
@@ -406,10 +527,6 @@ if ($wingetAvailable) {
         }
     }
 
-    Invoke-Step "Install Git" {
-        winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
-    }
-
     Invoke-Step "Set Chrome as default browser" {
         # Find Chrome installation
         $chromePaths = @(
@@ -426,33 +543,6 @@ if ($wingetAvailable) {
             Write-Info "Set Chrome as default browser"
         } else {
             Write-Warning "Chrome not found, skipping default browser setup"
-            $script:warningCount++
-        }
-    }
-
-    Invoke-Step "Install nvm-windows" {
-        winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
-    }
-
-    Invoke-Step "Add Python to PATH" {
-        # Find Python installation directory
-        $pythonPaths = @(
-            "$env:ProgramFiles\Python312",
-            "$env:LOCALAPPDATA\Programs\Python\Python312"
-        )
-
-        $pythonInstallPath = $pythonPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-        if ($pythonInstallPath) {
-            $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-            if ($currentPath -notlike "*$pythonInstallPath*") {
-                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
-                Write-Info "Added Python to system PATH"
-            } else {
-                Write-Info "Python already in PATH"
-            }
-        } else {
-            Write-Warning "Python installation directory not found"
             $script:warningCount++
         }
     }
@@ -487,10 +577,6 @@ if ($wingetAvailable) {
             Write-Warning "nvm not found. Please open a new terminal and run: nvm install lts && nvm use lts"
             $script:warningCount++
         }
-    }
-
-    Invoke-Step "Install Claude CLI (Claude Code)" {
-        irm https://claude.ai/install.ps1 | iex
     }
 
     Invoke-Step "Configure Claude CLI settings" {
@@ -545,13 +631,20 @@ if ($wingetAvailable) {
         Start-Process -FilePath $zipPath -ArgumentList "/S" -Wait -NoNewWindow
     }
 
-    Invoke-Step "Install Python" {
-        $pythonUrl = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
-        $pythonPath = "$env:TEMP\python_installer.exe"
-        Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonPath -UseBasicParsing
-        Start-Process -FilePath $pythonPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait -NoNewWindow
+    Invoke-Step "Install Python (direct download)" {
+        $pythonVersion = "3.12.8"
+        $url = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+        $output = "$env:TEMP\python-$pythonVersion-amd64.exe"
 
-        # Manually add Python to PATH if installer didn't do it
+        Write-Info "Downloading Python $pythonVersion..."
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+        Write-Info "Downloaded Python installer"
+
+        Write-Info "Installing Python..."
+        Start-Process -FilePath $output -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_pip=1', 'Include_test=0', 'Include_doc=0' -Wait -NoNewWindow
+        Write-Info "Python installed"
+
         $pythonInstallPath = "$env:ProgramFiles\Python312"
         if (Test-Path $pythonInstallPath) {
             $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
