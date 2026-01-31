@@ -354,7 +354,6 @@ if ($wingetAvailable) {
         @{ Name = "VLC Media Player"; Id = "VideoLAN.VLC" }
         @{ Name = "Everything Search"; Id = "voidtools.Everything" }
         @{ Name = "7-Zip"; Id = "7zip.7zip" }
-        @{ Name = "PowerToys"; Id = "Microsoft.PowerToys" }
     )
 
     # Add gaming software if enabled
@@ -603,63 +602,126 @@ if ($wingetAvailable) {
 } else {
     Write-Info "Using direct downloads for software installation..."
 
-    Invoke-Step "Install Google Chrome" {
-        $chromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
-        $chromePath = "$env:TEMP\chrome_installer.exe"
-        Invoke-WebRequest -Uri $chromeUrl -OutFile $chromePath -UseBasicParsing
-        Start-Process -FilePath $chromePath -ArgumentList "/silent", "/install" -Wait -NoNewWindow
-    }
+    # Define software jobs for parallel installation
+    $softwareJobs = @()
 
-    Invoke-Step "Install Visual Studio Code" {
-        $vscodeUrl = "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64"
-        $vscodePath = "$env:TEMP\vscode_installer.exe"
-        Invoke-WebRequest -Uri $vscodeUrl -OutFile $vscodePath -UseBasicParsing
-        Start-Process -FilePath $vscodePath -ArgumentList "/VERYSILENT", "/NORESTART", "/MERGETASKS=!runcode" -Wait -NoNewWindow
-    }
-
-    Invoke-Step "Install Git" {
-        $gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe"
-        $gitPath = "$env:TEMP\git_installer.exe"
-        Invoke-WebRequest -Uri $gitUrl -OutFile $gitPath -UseBasicParsing
-        Start-Process -FilePath $gitPath -ArgumentList "/VERYSILENT", "/NORESTART" -Wait -NoNewWindow
-    }
-
-    Invoke-Step "Install 7-Zip" {
-        $zipUrl = "https://www.7-zip.org/a/7z2408-x64.exe"
-        $zipPath = "$env:TEMP\7zip_installer.exe"
-        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
-        Start-Process -FilePath $zipPath -ArgumentList "/S" -Wait -NoNewWindow
-    }
-
-    Invoke-Step "Install Python (direct download)" {
-        $pythonVersion = "3.12.8"
-        $url = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
-        $output = "$env:TEMP\python-$pythonVersion-amd64.exe"
-
-        Write-Info "Downloading Python $pythonVersion..."
-        $ProgressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-        Write-Info "Downloaded Python installer"
-
-        Write-Info "Installing Python..."
-        Start-Process -FilePath $output -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_pip=1', 'Include_test=0', 'Include_doc=0' -Wait -NoNewWindow
-        Write-Info "Python installed"
-
-        $pythonInstallPath = "$env:ProgramFiles\Python312"
-        if (Test-Path $pythonInstallPath) {
-            $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-            if ($currentPath -notlike "*$pythonInstallPath*") {
-                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
-                Write-Info "Added Python to system PATH"
-            }
+    # Chrome job
+    $chromeJob = Start-Job -ScriptBlock {
+        try {
+            $chromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+            $chromePath = "$env:TEMP\chrome_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $chromeUrl -OutFile $chromePath -UseBasicParsing
+            Start-Process -FilePath $chromePath -ArgumentList "/silent", "/install" -Wait -NoNewWindow
+            return @{ Name = "Google Chrome"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "Google Chrome"; Success = $false; Output = $_.Exception.Message }
         }
     }
+    $softwareJobs += @{ Job = $chromeJob; Name = "Google Chrome" }
 
-    Invoke-Step "Install Everything Search" {
-        $everythingUrl = "https://www.voidtools.com/Everything-1.4.1.1026.x64-Setup.exe"
-        $everythingPath = "$env:TEMP\everything_installer.exe"
-        Invoke-WebRequest -Uri $everythingUrl -OutFile $everythingPath -UseBasicParsing
-        Start-Process -FilePath $everythingPath -ArgumentList "/S" -Wait -NoNewWindow
+    # VS Code job
+    $vscodeJob = Start-Job -ScriptBlock {
+        try {
+            $vscodeUrl = "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64"
+            $vscodePath = "$env:TEMP\vscode_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $vscodeUrl -OutFile $vscodePath -UseBasicParsing
+            Start-Process -FilePath $vscodePath -ArgumentList "/VERYSILENT", "/NORESTART", "/MERGETASKS=!runcode" -Wait -NoNewWindow
+            return @{ Name = "Visual Studio Code"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "Visual Studio Code"; Success = $false; Output = $_.Exception.Message }
+        }
+    }
+    $softwareJobs += @{ Job = $vscodeJob; Name = "Visual Studio Code" }
+
+    # Git job
+    $gitJob = Start-Job -ScriptBlock {
+        try {
+            $gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe"
+            $gitPath = "$env:TEMP\git_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $gitUrl -OutFile $gitPath -UseBasicParsing
+            Start-Process -FilePath $gitPath -ArgumentList "/VERYSILENT", "/NORESTART" -Wait -NoNewWindow
+            return @{ Name = "Git"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "Git"; Success = $false; Output = $_.Exception.Message }
+        }
+    }
+    $softwareJobs += @{ Job = $gitJob; Name = "Git" }
+
+    # 7-Zip job
+    $zipJob = Start-Job -ScriptBlock {
+        try {
+            $zipUrl = "https://www.7-zip.org/a/7z2408-x64.exe"
+            $zipPath = "$env:TEMP\7zip_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+            Start-Process -FilePath $zipPath -ArgumentList "/S" -Wait -NoNewWindow
+            return @{ Name = "7-Zip"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "7-Zip"; Success = $false; Output = $_.Exception.Message }
+        }
+    }
+    $softwareJobs += @{ Job = $zipJob; Name = "7-Zip" }
+
+    # Python job
+    $pythonJob = Start-Job -ScriptBlock {
+        try {
+            $pythonVersion = "3.12.8"
+            $url = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+            $output = "$env:TEMP\python-$pythonVersion-amd64.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+            Start-Process -FilePath $output -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_pip=1', 'Include_test=0', 'Include_doc=0' -Wait -NoNewWindow
+
+            $pythonInstallPath = "$env:ProgramFiles\Python312"
+            if (Test-Path $pythonInstallPath) {
+                $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                if ($currentPath -notlike "*$pythonInstallPath*") {
+                    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
+                }
+            }
+            return @{ Name = "Python"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "Python"; Success = $false; Output = $_.Exception.Message }
+        }
+    }
+    $softwareJobs += @{ Job = $pythonJob; Name = "Python" }
+
+    # Everything Search job
+    $everythingJob = Start-Job -ScriptBlock {
+        try {
+            $everythingUrl = "https://www.voidtools.com/Everything-1.4.1.1026.x64-Setup.exe"
+            $everythingPath = "$env:TEMP\everything_installer.exe"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $everythingUrl -OutFile $everythingPath -UseBasicParsing
+            Start-Process -FilePath $everythingPath -ArgumentList "/S" -Wait -NoNewWindow
+            return @{ Name = "Everything Search"; Success = $true; Output = "Installed successfully" }
+        } catch {
+            return @{ Name = "Everything Search"; Success = $false; Output = $_.Exception.Message }
+        }
+    }
+    $softwareJobs += @{ Job = $everythingJob; Name = "Everything Search" }
+
+    Write-Info "Waiting for $($softwareJobs.Count) parallel installations to complete..."
+
+    # Wait for ALL jobs to complete first
+    $allJobs = $softwareJobs | ForEach-Object { $_.Job }
+    Wait-Job -Job $allJobs | Out-Null
+
+    # Now collect all results
+    foreach ($jobInfo in $softwareJobs) {
+        $result = Receive-Job -Job $jobInfo.Job
+        Remove-Job -Job $jobInfo.Job
+
+        if ($result.Success) {
+            Write-Success "$($jobInfo.Name) completed"
+            $script:successCount++
+        } else {
+            Write-ErrorMsg "$($jobInfo.Name) failed: $($result.Output)"
+            $script:failureCount++
+        }
     }
 
     Write-Info "Skipping some software (no direct download URLs available): VLC, PowerToys, nvm, Node.js"
