@@ -112,7 +112,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
             $url = "https://github.com/PowerShell/PowerShell/releases/download/v$ps7Version/PowerShell-$ps7Version-win-x64.msi"
             $output = "$env:TEMP\PowerShell-$ps7Version-win-x64.msi"
 
-            # Download the MSI
+            # Download the MSI (disable progress bar for faster download)
+            $ProgressPreference = 'SilentlyContinue'
             Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
             Write-Success "Downloaded PowerShell 7 installer"
 
@@ -375,7 +376,7 @@ if ($wingetAvailable) {
         @{ Name = "VLC Media Player"; Id = "VideoLAN.VLC" }
         @{ Name = "Everything Search"; Id = "voidtools.Everything" }
         @{ Name = "7-Zip"; Id = "7zip.7zip" }
-        @{ Name = "Python"; Id = "Python.Python.3.12" }
+        @{ Name = "Python"; Id = "Python.Python.3.12"; Args = "/quiet PrependPath=1 Include_pip=1 Include_test=0 Include_doc=0" }
         @{ Name = "PowerToys"; Id = "Microsoft.PowerToys" }
     )
 
@@ -388,14 +389,18 @@ if ($wingetAvailable) {
     # Start all installations as background jobs
     foreach ($software in $parallelInstalls) {
         $job = Start-Job -ScriptBlock {
-            param($Id, $Name)
-            $result = winget install --id $Id --silent --accept-source-agreements --accept-package-agreements 2>&1
+            param($Id, $Name, $CustomArgs)
+            if ($CustomArgs) {
+                $result = winget install --id $Id --silent --override $CustomArgs --accept-source-agreements --accept-package-agreements 2>&1
+            } else {
+                $result = winget install --id $Id --silent --accept-source-agreements --accept-package-agreements 2>&1
+            }
             return @{
                 Name = $Name
                 Success = $LASTEXITCODE -eq 0
                 Output = $result
             }
-        } -ArgumentList $software.Id, $software.Name
+        } -ArgumentList $software.Id, $software.Name, $software.Args
 
         $softwareJobs += @{
             Job = $job
@@ -405,9 +410,13 @@ if ($wingetAvailable) {
 
     Write-Info "Waiting for $($softwareJobs.Count) parallel installations to complete..."
 
-    # Wait for all jobs and report results
+    # Wait for ALL jobs to complete first
+    $allJobs = $softwareJobs | ForEach-Object { $_.Job }
+    Wait-Job -Job $allJobs | Out-Null
+
+    # Now collect all results
     foreach ($jobInfo in $softwareJobs) {
-        $result = Receive-Job -Job $jobInfo.Job -Wait
+        $result = Receive-Job -Job $jobInfo.Job
         Remove-Job -Job $jobInfo.Job
 
         if ($result.Success -or $result.Output -like "*already installed*" -or $result.Output -like "*No available upgrade*") {
@@ -423,8 +432,51 @@ if ($wingetAvailable) {
         winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
     }
 
+    Invoke-Step "Set Chrome as default browser" {
+        # Find Chrome installation
+        $chromePaths = @(
+            "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+        )
+
+        $chromePath = $chromePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+        if ($chromePath) {
+            # Use Chrome's built-in flag to set as default browser
+            Start-Process -FilePath $chromePath -ArgumentList "--make-default-browser" -NoNewWindow
+            Write-Info "Set Chrome as default browser"
+        } else {
+            Write-Warning "Chrome not found, skipping default browser setup"
+            $script:warningCount++
+        }
+    }
+
     Invoke-Step "Install nvm-windows" {
         winget install --id CoreyButler.NVMforWindows --silent --accept-source-agreements --accept-package-agreements
+    }
+
+    Invoke-Step "Add Python to PATH" {
+        # Find Python installation directory
+        $pythonPaths = @(
+            "$env:ProgramFiles\Python312",
+            "$env:LOCALAPPDATA\Programs\Python\Python312"
+        )
+
+        $pythonInstallPath = $pythonPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+        if ($pythonInstallPath) {
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            if ($currentPath -notlike "*$pythonInstallPath*") {
+                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$pythonInstallPath;$pythonInstallPath\Scripts", "Machine")
+                Write-Info "Added Python to system PATH"
+            } else {
+                Write-Info "Python already in PATH"
+            }
+        } else {
+            Write-Warning "Python installation directory not found"
+            $script:warningCount++
+        }
     }
 
     # Install Node.js LTS via nvm (needs to run after nvm installation)
