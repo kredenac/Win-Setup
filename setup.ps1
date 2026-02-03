@@ -87,7 +87,12 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     # Download and install PS7 directly (faster than winget)
     Write-Info "Downloading PowerShell 7 from GitHub..."
     try {
-        $ps7Version = "7.4.7"
+        # Get latest version from GitHub API
+        Write-Info "Fetching latest PowerShell version..."
+        $latestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" -UseBasicParsing
+        $ps7Version = $latestRelease.tag_name -replace '^v', ''  # Remove 'v' prefix (e.g., v7.5.4 -> 7.5.4)
+        Write-Info "Latest version: $ps7Version"
+
         $url = "https://github.com/PowerShell/PowerShell/releases/download/v$ps7Version/PowerShell-$ps7Version-win-x64.msi"
         $output = "$env:TEMP\PowerShell-$ps7Version-win-x64.msi"
 
@@ -123,12 +128,13 @@ if (-not $wingetAvailable) {
     Write-Warning "winget not available - will use direct downloads for software installation"
 }
 
-# Install Windows Terminal if not already installed (only if winget is available)
+# Install/Update Windows Terminal to latest version (only if winget is available)
 if ($wingetAvailable) {
     $terminalInstalled = Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue
     if (-not $terminalInstalled) {
-        Write-Info "Windows Terminal not found. Installing..."
+        Write-Info "Windows Terminal not found. Installing latest version..."
         try {
+            # Install latest version from winget
             winget install --id Microsoft.WindowsTerminal --source winget --silent --accept-source-agreements --accept-package-agreements
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Windows Terminal installed successfully"
@@ -142,7 +148,20 @@ if ($wingetAvailable) {
             $script:warningCount++
         }
     } else {
-        Write-Info "Windows Terminal is already installed"
+        Write-Info "Windows Terminal is already installed. Upgrading to latest version..."
+        try {
+            # Upgrade to latest version
+            winget upgrade --id Microsoft.WindowsTerminal --source winget --silent --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Windows Terminal upgraded to latest version"
+            } else {
+                Write-Info "Windows Terminal is already at the latest version or upgrade skipped"
+            }
+        }
+        catch {
+            Write-Warning "Failed to upgrade Windows Terminal: $_"
+            $script:warningCount++
+        }
     }
 } else {
     Write-Info "Skipping Windows Terminal installation (requires winget or Microsoft Store)"
