@@ -129,7 +129,7 @@ if ($wingetAvailable) {
     if (-not $terminalInstalled) {
         Write-Info "Windows Terminal not found. Installing..."
         try {
-            winget install --id Microsoft.WindowsTerminal --silent --accept-source-agreements --accept-package-agreements
+            winget install --id Microsoft.WindowsTerminal --source winget --silent --accept-source-agreements --accept-package-agreements
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Windows Terminal installed successfully"
             } else {
@@ -429,9 +429,9 @@ if ($wingetAvailable) {
         $job = Start-Job -ScriptBlock {
             param($Id, $Name, $CustomArgs)
             if ($CustomArgs) {
-                $result = winget install --id $Id --silent --override $CustomArgs --accept-source-agreements --accept-package-agreements 2>&1
+                $result = winget install --id $Id --source winget --silent --override $CustomArgs --accept-source-agreements --accept-package-agreements 2>&1
             } else {
-                $result = winget install --id $Id --silent --accept-source-agreements --accept-package-agreements 2>&1
+                $result = winget install --id $Id --source winget --silent --accept-source-agreements --accept-package-agreements 2>&1
             }
             return @{
                 Name = $Name
