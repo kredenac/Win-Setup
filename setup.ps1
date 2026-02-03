@@ -337,6 +337,68 @@ Invoke-Step "Unpin Microsoft Edge from taskbar" {
         $script:warningCount++
     }
 }
+
+Invoke-Step "Enable classic context menu" {
+    if ([System.Environment]::OSVersion.Version.Build -ge 22000) {
+        $registryPath = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+        if (-not (Test-Path "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}")) {
+            New-Item -Path "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" -Force | Out-Null
+        }
+        if (-not (Test-Path $registryPath)) {
+            New-Item -Path $registryPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $registryPath -Name "(Default)" -Type String -Value "" -Force
+    } else {
+        Write-Info "Classic context menu only applicable to Windows 11"
+    }
+}
+
+Invoke-Step "Disable widgets in taskbar" {
+    if ([System.Environment]::OSVersion.Version.Build -ge 22000) {
+        $registryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
+        if (-not (Test-Path $registryPath)) {
+            New-Item -Path $registryPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $registryPath -Name "AllowNewsAndInterests" -Type DWord -Value 0 -Force
+    }
+}
+
+Invoke-Step "Disable Cortana button in taskbar" {
+    $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+    Set-ItemProperty -Path $registryPath -Name "ShowCortanaButton" -Type DWord -Value 0 -Force
+}
+
+Invoke-Step "Disable People button in taskbar" {
+    $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\People"
+    if (-not (Test-Path $registryPath)) {
+        New-Item -Path $registryPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $registryPath -Name "PeopleBand" -Type DWord -Value 0 -Force
+}
+
+Invoke-Step "Enable Remote Desktop" {
+    Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Type DWord -Force
+    try {
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Could not configure firewall rules for Remote Desktop: $_"
+        $script:warningCount++
+    }
+}
+
+Invoke-Step "Enable Hyper-V" {
+    try {
+        $result = Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart -ErrorAction Stop
+        if ($result.RestartNeeded) {
+            Write-Info "Hyper-V enabled (restart required)"
+        }
+    }
+    catch {
+        Write-Warning "Could not enable Hyper-V. This feature may not be available on this edition of Windows or may require BIOS virtualization settings."
+        $script:warningCount++
+    }
+}
 #endregion
 
 #region Software Installation (SLOW - Run in Parallel)
