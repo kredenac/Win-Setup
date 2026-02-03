@@ -16,7 +16,13 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
 
 **Note:** This method uses default configuration. For custom settings, use Option 2.
 
-### Option 2: Simple Execution (Custom Configuration)
+**Refresh dotfiles only** (PowerShell profile, Windows Terminal settings, Claude CLI settings):
+
+```powershell
+$DotfilesOnly=$true; irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
+```
+
+### Option 2: Local Execution (Custom Configuration)
 
 1. Download or clone this repository to your machine
 2. Edit `config.json` with your Git settings
@@ -27,8 +33,25 @@ irm https://raw.githubusercontent.com/kredenac/win-setup/main/setup.ps1 | iex
    ```
 5. Run the script:
    ```powershell
+   # Full setup
    .\setup.ps1
+
+   # Or refresh dotfiles only
+   .\setup.ps1 -DotfilesOnly
    ```
+
+## Dotfiles-Only Mode
+
+Use the `-DotfilesOnly` flag to refresh your configuration files without running the full setup. This mode:
+
+- **Skips** all Windows settings, registry modifications, and software installation
+- **Refreshes** only your dotfiles:
+  - PowerShell profile (aliases, prompt customization)
+  - Windows Terminal settings (theme, keybindings, profiles)
+  - Claude CLI settings
+- **No restart required** - just restart your terminal sessions
+
+This is useful when you've updated your dotfiles repository and want to pull the latest changes without re-running the entire setup.
 
 ## What This Script Does
 

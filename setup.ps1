@@ -5,9 +5,24 @@
     Windows Setup Script - Automated configuration for new Windows installations
 .DESCRIPTION
     Configures Windows settings, installs essential software, and sets up development environment
+.PARAMETER DotfilesOnly
+    When set, only refreshes dotfiles (PowerShell profile, Windows Terminal settings, Claude settings) without running full setup
 .NOTES
     Must be run as Administrator in PowerShell 7+
+.EXAMPLE
+    # Full setup
+    .\setup.ps1
+
+    # Only refresh dotfiles (local)
+    .\setup.ps1 -DotfilesOnly
+
+    # Only refresh dotfiles (remote single-line)
+    $DotfilesOnly=$true; irm https://raw.githubusercontent.com/kredenac/Win-Setup/main/setup.ps1 | iex
 #>
+
+param(
+    [switch]$DotfilesOnly
+)
 
 # Color output functions
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
@@ -40,7 +55,11 @@ function Invoke-Step {
 
 #region Pre-flight Checks
 Write-Host "`n========================================" -ForegroundColor Magenta
-Write-Host "  Windows Setup Script" -ForegroundColor Magenta
+if ($DotfilesOnly) {
+    Write-Host "  Windows Setup Script - Dotfiles Only Mode" -ForegroundColor Magenta
+} else {
+    Write-Host "  Windows Setup Script" -ForegroundColor Magenta
+}
 Write-Host "========================================`n" -ForegroundColor Magenta
 
 # Load configuration
@@ -79,7 +98,13 @@ Write-Info "Git Username: $($config.git.username)"
 Write-Info "Git Email: $($config.git.email)"
 Write-Info "Gaming Mode: $($config.gaming)"
 
+if ($DotfilesOnly) {
+    Write-Info "Running in dotfiles-only mode - skipping full setup"
+    Write-Host ""
+}
+
 # Check PowerShell version and install PowerShell 7 if needed
+if (-not $DotfilesOnly) {
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Warning "Running on Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
     Write-Warning "This script requires PowerShell 7+. Installing PowerShell 7..."
@@ -168,9 +193,11 @@ if ($wingetAvailable) {
 }
 
 Write-Host ""
+} # End of DotfilesOnly check for pre-flight checks
 #endregion
 
 #region Registry Modifications & System Settings (FAST - Run First)
+if (-not $DotfilesOnly) {
 Write-Host "`n--- WINDOWS SETTINGS & REGISTRY ---`n" -ForegroundColor Yellow
 
 Invoke-Step "Set taskbar alignment to left" {
@@ -418,9 +445,11 @@ Invoke-Step "Enable Hyper-V" {
         $script:warningCount++
     }
 }
+} # End of DotfilesOnly check for registry/system settings
 #endregion
 
 #region Software Installation (SLOW - Run in Parallel)
+if (-not $DotfilesOnly) {
 Write-Host "`n--- SOFTWARE INSTALLATION ---`n" -ForegroundColor Yellow
 
 if ($wingetAvailable) {
@@ -812,9 +841,11 @@ if ($wingetAvailable) {
 # Wait for all installers to fully complete and register
 Write-Info "Waiting for installations to finalize..."
 Start-Sleep -Seconds 5
+} # End of DotfilesOnly check for software installation
 #endregion
 
 #region Git Configuration
+if (-not $DotfilesOnly) {
 Write-Host "`n--- GIT CONFIGURATION ---`n" -ForegroundColor Yellow
 
 # Refresh PATH to ensure git is available
@@ -846,18 +877,21 @@ if (-not $gitAvailable) {
         git config --global credential.helper manager-core
     }
 }
+} # End of DotfilesOnly check for Git configuration
 #endregion
 
 #endregion
 
 #region PowerShell Profile Configuration
-Write-Host "`n--- POWERSHELL PROFILE ---`n" -ForegroundColor Yellow
+Write-Host "`n--- DOTFILES CONFIGURATION ---`n" -ForegroundColor Yellow
 
-Invoke-Step "Install posh-git module" {
-    # Install NuGet provider first without prompting
-    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction SilentlyContinue | Out-Null
-    # Install posh-git module
-    Install-Module -Name posh-git -Scope CurrentUser -Force -AllowClobber -SkipPublisherCheck
+if (-not $DotfilesOnly) {
+    Invoke-Step "Install posh-git module" {
+        # Install NuGet provider first without prompting
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction SilentlyContinue | Out-Null
+        # Install posh-git module
+        Install-Module -Name posh-git -Scope CurrentUser -Force -AllowClobber -SkipPublisherCheck
+    }
 }
 
 Invoke-Step "Configure PowerShell profile with Git aliases" {
@@ -905,11 +939,37 @@ Invoke-Step "Configure Windows Terminal settings" {
         $script:warningCount++
     }
 }
+
+Invoke-Step "Configure Claude CLI settings" {
+    # Create .claude directory if it doesn't exist
+    $claudeDir = "$env:USERPROFILE\.claude"
+    if (-not (Test-Path $claudeDir)) {
+        New-Item -Path $claudeDir -ItemType Directory -Force | Out-Null
+    }
+
+    # Download settings from dotfiles repo
+    $claudeSettingsUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/settings.json"
+    $claudeSettingsPath = "$claudeDir\settings.json"
+    try {
+        $settingsContent = Invoke-WebRequest -Uri $claudeSettingsUrl -UseBasicParsing | Select-Object -ExpandProperty Content
+        Set-Content -Path $claudeSettingsPath -Value $settingsContent -Force -Encoding UTF8
+        Write-Info "Claude CLI settings downloaded and configured at: $claudeSettingsPath"
+    }
+    catch {
+        Write-Warning "Failed to download Claude settings from GitHub: $_"
+        Write-Info "You can manually download it from: $claudeSettingsUrl"
+        throw
+    }
+}
 #endregion
 
 #region Summary
 Write-Host "`n========================================" -ForegroundColor Magenta
-Write-Host "  SETUP COMPLETE" -ForegroundColor Magenta
+if ($DotfilesOnly) {
+    Write-Host "  DOTFILES REFRESH COMPLETE" -ForegroundColor Magenta
+} else {
+    Write-Host "  SETUP COMPLETE" -ForegroundColor Magenta
+}
 Write-Host "========================================`n" -ForegroundColor Magenta
 
 Write-Host "Summary:" -ForegroundColor Cyan
@@ -921,24 +981,33 @@ if ($script:failureCount -gt 0) {
     Write-ErrorMsg "$script:failureCount tasks failed"
 }
 
-Write-Host "`n" -NoNewline
-Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
-Write-Host "Some changes require a restart to take effect."
-Write-Host "This includes: UAC settings, Developer Mode, taskbar changes, date/time format`n"
-
-Write-Host "REMINDER: " -ForegroundColor Cyan -NoNewline
-Write-Host "You might want to pin these apps to the taskbar:"
-Write-Host "  - Google Chrome"
-Write-Host "  - Windows Terminal"
-Write-Host "  - Visual Studio Code"
-Write-Host "  - Everything Search`n"
-
-$restart = Read-Host "Would you like to restart now? (Y/N)"
-if ($restart -eq "Y" -or $restart -eq "y") {
-    Write-Info "Restarting in 10 seconds... (Press Ctrl+C to cancel)"
-    Start-Sleep -Seconds 10
-    Restart-Computer -Force
+if ($DotfilesOnly) {
+    Write-Host "`n" -NoNewline
+    Write-Host "Dotfiles refreshed:" -ForegroundColor Cyan
+    Write-Host "  - PowerShell profile"
+    Write-Host "  - Windows Terminal settings"
+    Write-Host "  - Claude CLI settings"
+    Write-Host "`nRestart Windows Terminal and PowerShell for changes to take effect.`n"
 } else {
-    Write-Info "Please restart your computer when convenient to apply all changes."
+    Write-Host "`n" -NoNewline
+    Write-Host "IMPORTANT: " -ForegroundColor Yellow -NoNewline
+    Write-Host "Some changes require a restart to take effect."
+    Write-Host "This includes: UAC settings, Developer Mode, taskbar changes, date/time format`n"
+
+    Write-Host "REMINDER: " -ForegroundColor Cyan -NoNewline
+    Write-Host "You might want to pin these apps to the taskbar:"
+    Write-Host "  - Google Chrome"
+    Write-Host "  - Windows Terminal"
+    Write-Host "  - Visual Studio Code"
+    Write-Host "  - Everything Search`n"
+
+    $restart = Read-Host "Would you like to restart now? (Y/N)"
+    if ($restart -eq "Y" -or $restart -eq "y") {
+        Write-Info "Restarting in 10 seconds... (Press Ctrl+C to cancel)"
+        Start-Sleep -Seconds 10
+        Restart-Computer -Force
+    } else {
+        Write-Info "Please restart your computer when convenient to apply all changes."
+    }
 }
 #endregion
