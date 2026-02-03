@@ -960,6 +960,20 @@ Invoke-Step "Configure Claude CLI settings" {
         Write-Info "You can manually download it from: $claudeSettingsUrl"
         throw
     }
+
+    # Download claude.md from dotfiles repo
+    $claudeMdUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/claude.md"
+    $claudeMdPath = "$claudeDir\claude.md"
+    try {
+        $claudeMdContent = Invoke-WebRequest -Uri $claudeMdUrl -UseBasicParsing | Select-Object -ExpandProperty Content
+        Set-Content -Path $claudeMdPath -Value $claudeMdContent -Force -Encoding UTF8
+        Write-Info "Claude Code global config downloaded and configured at: $claudeMdPath"
+    }
+    catch {
+        Write-Warning "Failed to download Claude global config from GitHub: $_"
+        Write-Info "You can manually download it from: $claudeMdUrl"
+        throw
+    }
 }
 #endregion
 
@@ -987,6 +1001,7 @@ if ($DotfilesOnly) {
     Write-Host "  - PowerShell profile"
     Write-Host "  - Windows Terminal settings"
     Write-Host "  - Claude CLI settings"
+    Write-Host "  - Claude Code global config"
     Write-Host "`nRestart Windows Terminal and PowerShell for changes to take effect.`n"
 } else {
     Write-Host "`n" -NoNewline
