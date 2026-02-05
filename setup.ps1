@@ -17,7 +17,7 @@
     .\setup.ps1 -DotfilesOnly
 
     # Only refresh dotfiles (remote single-line)
-    $DotfilesOnly=$true; irm https://raw.githubusercontent.com/kredenac/Win-Setup/main/setup.ps1 | iex
+    iex "& { $(irm https://raw.githubusercontent.com/kredenac/Win-Setup/main/setup.ps1) } -DotfilesOnly"
 #>
 
 param(
