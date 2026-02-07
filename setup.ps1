@@ -688,27 +688,6 @@ if ($wingetAvailable) {
         }
     }
 
-    Invoke-Step "Configure Claude CLI settings" {
-        # Create .claude directory if it doesn't exist
-        $claudeDir = "$env:USERPROFILE\.claude"
-        if (-not (Test-Path $claudeDir)) {
-            New-Item -Path $claudeDir -ItemType Directory -Force | Out-Null
-        }
-
-        # Download settings from dotfiles repo
-        $claudeSettingsUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/settings.json"
-        $claudeSettingsPath = "$claudeDir\settings.json"
-        try {
-            $settingsContent = Invoke-WebRequest -Uri $claudeSettingsUrl -UseBasicParsing | Select-Object -ExpandProperty Content
-            Set-Content -Path $claudeSettingsPath -Value $settingsContent -Force -Encoding UTF8
-            Write-Info "Claude CLI settings downloaded and configured at: $claudeSettingsPath"
-        }
-        catch {
-            Write-Warning "Failed to download Claude settings from GitHub: $_"
-            Write-Info "You can manually download it from: $claudeSettingsUrl"
-            throw
-        }
-    }
 } else {
     Write-Info "Using direct downloads for software installation..."
 
@@ -894,85 +873,96 @@ if (-not $DotfilesOnly) {
     }
 }
 
-Invoke-Step "Configure PowerShell profile with Git aliases" {
-    # Get PowerShell profile path
+# Check for local dotfiles repo as sibling directory
+$dotfilesRepo = if ($PSScriptRoot) { Join-Path (Split-Path -Parent $PSScriptRoot) "dotfiles" } else { $null }
+$useDotfilesRepo = $dotfilesRepo -and (Test-Path $dotfilesRepo)
+
+if ($useDotfilesRepo) {
+    Write-Info "Found local dotfiles repo at: $dotfilesRepo (will create symlinks)"
+} else {
+    Write-Info "No local dotfiles repo found, will download from GitHub"
+}
+
+# Helper: create a symlink, removing existing file/link at target first
+function Set-DotfileSymlink {
+    param(
+        [string]$LinkPath,
+        [string]$TargetPath
+    )
+
+    # Ensure parent directory exists
+    $parentDir = Split-Path -Parent $LinkPath
+    if (-not (Test-Path $parentDir)) {
+        New-Item -Path $parentDir -ItemType Directory -Force | Out-Null
+    }
+
+    # Remove existing file or symlink at the target location
+    if (Test-Path $LinkPath) {
+        Remove-Item $LinkPath -Force
+    }
+
+    New-Item -ItemType SymbolicLink -Path $LinkPath -Target $TargetPath -Force | Out-Null
+    Write-Info "Symlinked: $LinkPath -> $TargetPath"
+}
+
+# Helper: download a file from GitHub to a destination path
+function Get-DotfileFromGitHub {
+    param(
+        [string]$Url,
+        [string]$DestPath
+    )
+
+    # Ensure parent directory exists
+    $parentDir = Split-Path -Parent $DestPath
+    if (-not (Test-Path $parentDir)) {
+        New-Item -Path $parentDir -ItemType Directory -Force | Out-Null
+    }
+
+    $content = Invoke-WebRequest -Uri $Url -UseBasicParsing | Select-Object -ExpandProperty Content
+    Set-Content -Path $DestPath -Value $content -Force -Encoding UTF8
+    Write-Info "Downloaded to: $DestPath"
+}
+
+Invoke-Step "Configure PowerShell profile" {
     $profilePath = $PROFILE.CurrentUserAllHosts
 
-    # Create profile directory if it doesn't exist
-    $profileDir = Split-Path -Parent $profilePath
-    if (-not (Test-Path $profileDir)) {
-        New-Item -Path $profileDir -ItemType Directory -Force | Out-Null
-    }
-
-    # Download profile from dotfiles repo
-    $profileUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/PowerShell-Profile.ps1"
-    try {
-        $profileContent = Invoke-WebRequest -Uri $profileUrl -UseBasicParsing | Select-Object -ExpandProperty Content
-        Set-Content -Path $profilePath -Value $profileContent -Force
-        Write-Info "PowerShell profile downloaded and configured at: $profilePath"
-    }
-    catch {
-        Write-Warning "Failed to download PowerShell profile from GitHub: $_"
-        Write-Info "You can manually download it from: $profileUrl"
-        throw
+    if ($useDotfilesRepo) {
+        Set-DotfileSymlink -LinkPath $profilePath -TargetPath "$dotfilesRepo\PowerShell-Profile.ps1"
+    } else {
+        $profileDir = Split-Path -Parent $profilePath
+        if (-not (Test-Path $profileDir)) {
+            New-Item -Path $profileDir -ItemType Directory -Force | Out-Null
+        }
+        Get-DotfileFromGitHub -Url "https://raw.githubusercontent.com/kredenac/dotfiles/main/PowerShell-Profile.ps1" -DestPath $profilePath
     }
 }
 
 Invoke-Step "Configure Windows Terminal settings" {
     $settingsPath = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+    $settingsDir = Split-Path -Parent $settingsPath
 
-    if (Test-Path $settingsPath) {
-        # Download settings from dotfiles repo
-        $settingsUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/WindowsTerminal-settings.json"
-        try {
-            $settingsContent = Invoke-WebRequest -Uri $settingsUrl -UseBasicParsing | Select-Object -ExpandProperty Content
-            Set-Content -Path $settingsPath -Value $settingsContent -Force -Encoding UTF8
-            Write-Info "Windows Terminal settings downloaded and configured from dotfiles"
-        }
-        catch {
-            Write-Warning "Failed to download Windows Terminal settings from GitHub: $_"
-            Write-Info "You can manually download it from: $settingsUrl"
-            throw
-        }
-    } else {
-        Write-Warning "Windows Terminal settings file not found. Install Windows Terminal first."
+    if (-not (Test-Path $settingsDir)) {
+        Write-Warning "Windows Terminal settings directory not found. Install Windows Terminal first."
         $script:warningCount++
+        return
+    }
+
+    if ($useDotfilesRepo) {
+        Set-DotfileSymlink -LinkPath $settingsPath -TargetPath "$dotfilesRepo\WindowsTerminal-settings.json"
+    } else {
+        Get-DotfileFromGitHub -Url "https://raw.githubusercontent.com/kredenac/dotfiles/main/WindowsTerminal-settings.json" -DestPath $settingsPath
     }
 }
 
 Invoke-Step "Configure Claude CLI settings" {
-    # Create .claude directory if it doesn't exist
     $claudeDir = "$env:USERPROFILE\.claude"
-    if (-not (Test-Path $claudeDir)) {
-        New-Item -Path $claudeDir -ItemType Directory -Force | Out-Null
-    }
 
-    # Download settings from dotfiles repo
-    $claudeSettingsUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/settings.json"
-    $claudeSettingsPath = "$claudeDir\settings.json"
-    try {
-        $settingsContent = Invoke-WebRequest -Uri $claudeSettingsUrl -UseBasicParsing | Select-Object -ExpandProperty Content
-        Set-Content -Path $claudeSettingsPath -Value $settingsContent -Force -Encoding UTF8
-        Write-Info "Claude CLI settings downloaded and configured at: $claudeSettingsPath"
-    }
-    catch {
-        Write-Warning "Failed to download Claude settings from GitHub: $_"
-        Write-Info "You can manually download it from: $claudeSettingsUrl"
-        throw
-    }
-
-    # Download claude.md from dotfiles repo
-    $claudeMdUrl = "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/claude.md"
-    $claudeMdPath = "$claudeDir\claude.md"
-    try {
-        $claudeMdContent = Invoke-WebRequest -Uri $claudeMdUrl -UseBasicParsing | Select-Object -ExpandProperty Content
-        Set-Content -Path $claudeMdPath -Value $claudeMdContent -Force -Encoding UTF8
-        Write-Info "Claude Code global config downloaded and configured at: $claudeMdPath"
-    }
-    catch {
-        Write-Warning "Failed to download Claude global config from GitHub: $_"
-        Write-Info "You can manually download it from: $claudeMdUrl"
-        throw
+    if ($useDotfilesRepo) {
+        Set-DotfileSymlink -LinkPath "$claudeDir\settings.json" -TargetPath "$dotfilesRepo\.claude\settings.json"
+        Set-DotfileSymlink -LinkPath "$claudeDir\claude.md" -TargetPath "$dotfilesRepo\.claude\claude.md"
+    } else {
+        Get-DotfileFromGitHub -Url "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/settings.json" -DestPath "$claudeDir\settings.json"
+        Get-DotfileFromGitHub -Url "https://raw.githubusercontent.com/kredenac/dotfiles/main/.claude/claude.md" -DestPath "$claudeDir\claude.md"
     }
 }
 #endregion
@@ -997,7 +987,8 @@ if ($script:failureCount -gt 0) {
 
 if ($DotfilesOnly) {
     Write-Host "`n" -NoNewline
-    Write-Host "Dotfiles refreshed:" -ForegroundColor Cyan
+    $dotfilesMethod = if ($useDotfilesRepo) { "symlinked from $dotfilesRepo" } else { "downloaded from GitHub" }
+    Write-Host "Dotfiles $dotfilesMethod`:" -ForegroundColor Cyan
     Write-Host "  - PowerShell profile"
     Write-Host "  - Windows Terminal settings"
     Write-Host "  - Claude CLI settings"
